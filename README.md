@@ -1,3 +1,4 @@
+[392.webm](https://github.com/user-attachments/assets/ad8c58a9-14f7-4de9-b47e-bac86172eb2b)
 # ⬡ NetWatch v4
 
 **Real-time network monitor and security tool** — cattura, analizza e visualizza il traffico di rete con rilevamento anomalie, scansioni Nmap integrate, geolocalizzazione e dashboard live.
@@ -5,10 +6,10 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  ⬡ NetWatch v4          LIVE ●          09:41:22        │
-│  BW 2.3 MB/s  PPS 1842  FLUSSI 47  ALERT 2  UP 00:12   │
+│  BW 2.3 MB/s  PPS 1842  FLUSSI 47  ALERT 2  UP 00:12    │
 ├──────────────┬──────────────────────────────────────────┤
 │ Overview     │  Bandwidth (60s)           2.3 MB/s peak │
-│ 🌍 Mappa Geo │  ▁▂▄▆█▇▅▃▂▄▆▇█▅▃▁▂▄▆▇█   ~~~~~~~~~~~~~~~│
+│ 🌍 Mappa Geo │  ▁▂▄▆█▇▅▃▂▄▆▇█▅▃▁▂▄▆▇█   ~~~~~~~~~~~~~~  │
 │ Network Graph│                                          │
 │ Flussi       │  Top Host per Banda                      │
 │ Host         │  192.168.1.10  ████████  1.1 MB/s        │
@@ -17,8 +18,8 @@
 │ Analytics    │                                          │
 │ DNS          │  Protocolli:  TCP 72%  UDP 24%  ICMP 4%  │
 │ Nmap         │                                          │
-│ Vulnerabilità│  ⚠ PORT_SCAN  192.168.1.50 → 24 port/10s│
-│ ⚙ Config     │  ✓ DNS_TUNNEL  10.0.0.15 DNS avg 512B   │
+│ Vulnerabilità│  ⚠ PORT_SCAN  192.168.1.50 → 24 port/10s │
+│ ⚙ Config     │  ✓ DNS_TUNNEL  10.0.0.15 DNS avg 512B    │
 └──────────────┴──────────────────────────────────────────┘
 ```
 
