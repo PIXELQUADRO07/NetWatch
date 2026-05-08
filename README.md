@@ -1,3 +1,4 @@
+[392.webm](https://github.com/user-attachments/assets/0a7fcc6e-7330-4c1e-bf60-7e642ab8987c)
 # ⬡ NetWatch v4
 
 **Real-time network monitor and security tool** — cattura, analizza e visualizza il traffico di rete con rilevamento anomalie, scansioni Nmap integrate, geolocalizzazione e dashboard live.
