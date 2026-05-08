@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.db
+*.db-journal
+
+# Node
+dashboard/node_modules/
+dashboard/dist/
+node_modules/
+
+# Dev/IDE
+.env
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# Test/docs artifacts
+coverage/
+htmlcov/
+.coverage

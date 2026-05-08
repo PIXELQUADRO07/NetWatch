@@ -1,0 +1,1021 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from "recharts";
+import { useAuth, LoginScreen } from "./auth.jsx";
+import { useI18n } from "./i18n.jsx";
+import ConfigPanel from "./ConfigPanel.jsx";
+
+/* ─── CONFIG ──────────────────────────────────────────────────────────────── */
+const API = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
+
+/* ─── THEME ───────────────────────────────────────────────────────────────── */
+const T = {
+  bg: "#05080f", s1: "#0a0f1e", s2: "#0f1628", s3: "#141d35",
+  border: "#1c2a42", border2: "#243350",
+  cyan: "#00e5ff", violet: "#8b5cf6", pink: "#f472b6",
+  amber: "#fbbf24", green: "#10b981", red: "#ef4444", blue: "#3b82f6",
+  text: "#e2e8f0", muted: "#475569",
+  mono: "'JetBrains Mono','Fira Code',monospace",
+  sans: "'Space Grotesk','Segoe UI',sans-serif",
+};
+const PROTO_C = { TCP: T.cyan, UDP: T.violet, ICMP: T.amber, OTHER: T.muted };
+const SEV_C   = { high: T.red, medium: T.amber, low: T.green };
+
+/* ─── HELPERS ─────────────────────────────────────────────────────────────── */
+const fmtB  = b => { if (!b) return "0 B"; if (b>=1e9) return (b/1e9).toFixed(2)+" GB"; if (b>=1e6) return (b/1e6).toFixed(1)+" MB"; if (b>=1e3) return (b/1e3).toFixed(1)+" KB"; return Math.round(b)+" B"; };
+const fmtBs = b => { if (!b) return "0 B/s"; if (b>=1e6) return (b/1e6).toFixed(2)+" MB/s"; if (b>=1e3) return (b/1e3).toFixed(1)+" KB/s"; return Math.round(b)+" B/s"; };
+const now8  = () => new Date().toLocaleTimeString("it-IT",{hour12:false});
+const FLAG  = cc => ({US:"🇺🇸",DE:"🇩🇪",NL:"🇳🇱",AU:"🇦🇺",GB:"🇬🇧",FR:"🇫🇷",JP:"🇯🇵",IT:"🇮🇹",SG:"🇸🇬",CA:"🇨🇦",CN:"🇨🇳",RU:"🇷🇺"})[cc] || "🌐";
+
+/* ─── GLOBAL CSS ──────────────────────────────────────────────────────────── */
+const GS = () => <style>{`
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;700;800&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body,#root{height:100%;background:${T.bg};color:${T.text};font-family:${T.sans}}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:${T.border2};border-radius:3px}
+  input,select,textarea{background:${T.s2};border:1px solid ${T.border};border-radius:6px;padding:7px 11px;color:${T.text};font-family:${T.mono};font-size:12px;outline:none;transition:border .15s}
+  input:focus,select:focus,textarea:focus{border-color:${T.cyan}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+`}</style>;
+
+/* ─── ATOMS ───────────────────────────────────────────────────────────────── */
+const Card   = ({children,style={}}) => <div style={{background:T.s1,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",...style}}>{children}</div>;
+const CTitle = ({children,right}) => (
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+    <span style={{fontSize:10,fontWeight:700,letterSpacing:2,textTransform:"uppercase",color:T.muted}}>{children}</span>
+    {right&&<span style={{fontSize:10,color:T.muted}}>{right}</span>}
+  </div>
+);
+const Badge  = ({children,color=T.muted}) => <span style={{display:"inline-flex",alignItems:"center",padding:"2px 7px",borderRadius:4,fontSize:10,fontWeight:700,fontFamily:T.mono,color,background:color+"1a"}}>{children}</span>;
+const Btn    = ({children,onClick,color=T.cyan,disabled,style={}}) => (
+  <button onClick={onClick} disabled={disabled}
+    style={{padding:"7px 14px",border:`1px solid ${disabled?T.muted:color}44`,borderRadius:6,background:(disabled?T.muted:color)+"0a",color:disabled?T.muted:color,fontFamily:T.sans,fontSize:12,fontWeight:700,cursor:disabled?"not-allowed":"pointer",letterSpacing:.5,...style}}>
+    {children}
+  </button>
+);
+const Pdot   = ({color=T.green}) => <span style={{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block",boxShadow:`0 0 0 4px ${color}33`,animation:"pulse 1.8s ease-in-out infinite"}}/>;
+const Stat   = ({label,value,sub,color=T.text}) => (
+  <div style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:"13px 16px",animation:"fadeIn .3s ease"}}>
+    <div style={{fontSize:9,fontWeight:700,letterSpacing:2,textTransform:"uppercase",color:T.muted,marginBottom:6}}>{label}</div>
+    <div style={{fontSize:24,fontFamily:T.mono,fontWeight:600,color,lineHeight:1}}>{value??<span style={{color:T.muted}}>—</span>}</div>
+    {sub&&<div style={{fontSize:10,color:T.muted,marginTop:4,fontFamily:T.mono}}>{sub}</div>}
+  </div>
+);
+const CTip = ({active,payload,fmt}) => {
+  if (!active||!payload?.length) return null;
+  return <div style={{background:T.s2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"8px 12px",fontSize:11,fontFamily:T.mono}}>
+    {payload.map((p,i)=><div key={i} style={{color:p.color||T.text}}>{fmt?fmt(p.value,p.name):`${p.name}: ${p.value}`}</div>)}
+  </div>;
+};
+
+/* ─── WORLD MAP ───────────────────────────────────────────────────────────── */
+const WorldMap = ({extHosts}) => {
+  const [tip,setTip] = useState(null);
+  const W=700,H=340;
+  const proj=(lon,lat)=>[((lon+180)/360)*W,((90-lat)/180)*H];
+  const home=proj(14.2,40.8);
+  const points=extHosts.filter(h=>h.geo?.lat!=null).map(h=>({...h,px:proj(h.geo.lon,h.geo.lat)}));
+  const maxB=Math.max(...points.map(p=>p.total||1),1);
+  return (
+    <div style={{position:"relative"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",borderRadius:8,background:"#060d1a"}}>
+        <defs><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+        {[30,60,90,120,150,180,210,240,270,300,330].map(l=><line key={l} x1={proj(l-180,90)[0]} y1={0} x2={proj(l-180,-90)[0]} y2={H} stroke={T.border} strokeWidth=".3" strokeDasharray="2,5"/>)}
+        {[-60,-30,0,30,60].map(l=><line key={l} x1={0} y1={proj(0,l)[1]} x2={W} y2={proj(0,l)[1]} stroke={T.border} strokeWidth=".3" strokeDasharray="2,5"/>)}
+        <polygon points="80,40 160,30 165,120 130,140 100,160 70,140 55,90 80,40"        fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        <polygon points="120,160 160,155 175,200 155,260 125,275 110,240 105,190 120,160" fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        <polygon points="305,45 360,40 370,90 340,105 310,95 295,70 305,45"              fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        <polygon points="320,110 380,105 395,160 385,230 345,260 310,230 300,160 320,110" fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        <polygon points="370,40 560,30 580,100 540,130 480,120 420,110 375,90 370,40"    fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        <polygon points="520,200 590,195 600,250 555,270 510,255 505,215 520,200"        fill="#0f2040" stroke={T.border} strokeWidth=".5"/>
+        {points.map((p,i)=>{
+          const [x2,y2]=p.px,[x1,y1]=home;
+          const cx=(x1+x2)/2,cy=Math.min(y1,y2)-50-Math.abs(x2-x1)*.12;
+          const ratio=(p.total||1)/maxB;
+          const col=ratio>.6?T.cyan:ratio>.3?T.violet:T.green;
+          const r=Math.max(4,Math.min(10,3+ratio*7));
+          return <g key={i}>
+            <path d={`M${x1},${y1} Q${cx},${cy} ${x2},${y2}`} fill="none" stroke={col} strokeWidth={.5+ratio*1.5} strokeOpacity={.55} strokeDasharray="4,3"/>
+            <circle cx={x2} cy={y2} r={r} fill={col} fillOpacity=".15" stroke={col} strokeWidth="1.2" filter="url(#glow)" style={{cursor:"pointer"}} onMouseEnter={()=>setTip({...p,x:x2,y:y2})} onMouseLeave={()=>setTip(null)}/>
+            <circle cx={x2} cy={y2} r={r} fill="none" stroke={col} strokeWidth="1" opacity=".5">
+              <animate attributeName="r" from={r} to={r+9} dur={`${2+i*.5}s`} repeatCount="indefinite"/>
+              <animate attributeName="opacity" from=".5" to="0" dur={`${2+i*.5}s`} repeatCount="indefinite"/>
+            </circle>
+          </g>;
+        })}
+        <circle cx={home[0]} cy={home[1]} r={6} fill={T.cyan} fillOpacity=".2" stroke={T.cyan} strokeWidth="1.5" filter="url(#glow)"/>
+        <circle cx={home[0]} cy={home[1]} r={3} fill={T.cyan}/>
+        <circle cx={home[0]} cy={home[1]} r={3} fill="none" stroke={T.cyan} strokeWidth="1">
+          <animate attributeName="r" from="3" to="16" dur="1.8s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" from="1" to="0" dur="1.8s" repeatCount="indefinite"/>
+        </circle>
+        <text x={home[0]+9} y={home[1]-7} fill={T.cyan} fontSize="9" fontFamily={T.mono}>YOU</text>
+      </svg>
+      {tip&&(
+        <div style={{position:"absolute",left:Math.min(tip.x+10,480),top:Math.max(tip.y-60,0),background:T.s2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 14px",fontSize:11,fontFamily:T.mono,pointerEvents:"none",zIndex:10,minWidth:160}}>
+          <div style={{color:T.cyan,fontWeight:600,marginBottom:4}}>{FLAG(tip.geo?.cc)} {tip.geo?.city}, {tip.geo?.cc}</div>
+          <div style={{color:T.text}}>{tip.ip}</div>
+          <div style={{color:T.muted,marginTop:2}}>{tip.geo?.isp||""}</div>
+          <div style={{color:T.amber,marginTop:4}}>↕ {fmtB(tip.total)}</div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── NETWORK GRAPH ───────────────────────────────────────────────────────── */
+const NetGraph = ({hosts,flows}) => {
+  const cvs=useRef(null);
+  const anim=useRef(null);
+  const nodes=useRef([]);
+  const tick=useRef(0);
+  useEffect(()=>{
+    const canvas=cvs.current; if(!canvas)return;
+    const W=canvas.offsetWidth||700,H=420;
+    canvas.width=W; canvas.height=H;
+    const ctx=canvas.getContext("2d");
+    if(nodes.current.length!==hosts.length){
+      nodes.current=hosts.map((h,i)=>{
+        const a=(i/Math.max(hosts.length,1))*Math.PI*2, r=Math.min(W,H)*.28;
+        return {...h,x:W/2+Math.cos(a)*r,y:H/2+Math.sin(a)*r,vx:0,vy:0};
+      });
+    } else {
+      nodes.current=nodes.current.map(n=>{
+        const h=hosts.find(h=>h.ip===n.ip);
+        return h?{...n,...h,x:n.x,y:n.y,vx:n.vx,vy:n.vy}:n;
+      });
+    }
+    const draw=()=>{
+      tick.current++;
+      ctx.clearRect(0,0,W,H);
+      const ns=nodes.current;
+      ns.forEach(n=>{
+        ns.forEach(m=>{ if(n===m)return; const dx=n.x-m.x,dy=n.y-m.y,d=Math.sqrt(dx*dx+dy*dy)||1; if(d<85){const f=.4/d;n.vx+=dx*f;n.vy+=dy*f}});
+        n.vx+=(W/2-n.x)*.001; n.vy+=(H/2-n.y)*.001;
+        n.vx*=.9; n.vy*=.9;
+        n.x=Math.max(36,Math.min(W-36,n.x+n.vx));
+        n.y=Math.max(36,Math.min(H-36,n.y+n.vy));
+      });
+      flows.slice(0,20).forEach(f=>{
+        const src=ns.find(n=>n.ip===f.src_ip),dst=ns.find(n=>n.ip===f.dst_ip);
+        if(!src||!dst||src===dst)return;
+        const col=PROTO_C[f.proto]||T.muted;
+        const w=Math.max(.5,Math.min(3.5,f.bytes/120000));
+        const mx=(src.x+dst.x)/2+(dst.y-src.y)*.25,my=(src.y+dst.y)/2+(src.x-dst.x)*.25;
+        ctx.beginPath(); ctx.moveTo(src.x,src.y); ctx.quadraticCurveTo(mx,my,dst.x,dst.y);
+        ctx.strokeStyle=col+"44"; ctx.lineWidth=w; ctx.stroke();
+        const t=((tick.current*2+f.dst_port)%100)/100;
+        const bx=(1-t)*(1-t)*src.x+2*(1-t)*t*mx+t*t*dst.x;
+        const by=(1-t)*(1-t)*src.y+2*(1-t)*t*my+t*t*dst.y;
+        ctx.beginPath(); ctx.arc(bx,by,2,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
+      });
+      ns.forEach(n=>{
+        const h=hosts.find(h=>h.ip===n.ip)||{};
+        const bw=(h.bytes_sent||0)+(h.bytes_recv||0);
+        const r=Math.max(13,Math.min(26,11+bw/10000));
+        const isInt=/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(n.ip);
+        const col=isInt?T.cyan:T.pink;
+        const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*2.2);
+        g.addColorStop(0,col+"2a"); g.addColorStop(1,col+"00");
+        ctx.beginPath(); ctx.arc(n.x,n.y,r*2.2,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+        ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
+        ctx.fillStyle=col+"18"; ctx.fill(); ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.stroke();
+        if(bw>20000){
+          const ph=(tick.current*2+n.x)%60/60;
+          ctx.beginPath(); ctx.arc(n.x,n.y,r+3+ph*8,0,Math.PI*2);
+          ctx.strokeStyle=col+Math.round((1-ph)*70).toString(16).padStart(2,"0");
+          ctx.lineWidth=1; ctx.stroke();
+        }
+        ctx.textAlign="center"; ctx.fillStyle=T.muted; ctx.font=`9px ${T.mono}`;
+        ctx.fillText(n.ip,n.x,n.y+r+12);
+      });
+      ctx.font=`10px ${T.mono}`; ctx.textAlign="left";
+      ctx.fillStyle=T.cyan+"cc"; ctx.fillRect(12,12,8,8); ctx.fillStyle=T.muted; ctx.fillText("Interno",24,20);
+      ctx.fillStyle=T.pink+"cc"; ctx.fillRect(12,28,8,8); ctx.fillStyle=T.muted; ctx.fillText("Esterno",24,36);
+      if(!hosts.length){ ctx.fillStyle=T.muted; ctx.textAlign="center"; ctx.font=`13px ${T.sans}`; ctx.fillText("In attesa di dati dal server…",W/2,H/2); }
+      anim.current=requestAnimationFrame(draw);
+    };
+    anim.current=requestAnimationFrame(draw);
+    return ()=>cancelAnimationFrame(anim.current);
+  },[hosts,flows]);
+  return <canvas ref={cvs} style={{width:"100%",height:420,borderRadius:8,display:"block"}}/>;
+};
+
+/* ─── HEATMAP ─────────────────────────────────────────────────────────────── */
+const Heatmap = ({data, days}) => {
+  const [hov,setHov]=useState(null);
+  const flat=data.flat().filter(Boolean);
+  const max=Math.max(...flat,1);
+  const col=v=>{ const t=v/max; if(t<.15)return"#0f2040"; if(t<.35)return"#0a3a5c"; if(t<.55)return"#0e5a8a"; if(t<.75)return"#0090c8"; return T.cyan; };
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"30px repeat(24,1fr)",gap:2,fontSize:9,fontFamily:T.mono}}>
+        <div/>
+        {Array.from({length:24},(_,i)=><div key={i} style={{textAlign:"center",color:T.muted}}>{i}</div>)}
+        {days.map((d,di)=>[
+          <div key={d} style={{display:"flex",alignItems:"center",color:T.muted}}>{d}</div>,
+          ...Array.from({length:24},(_,h)=>(
+            <div key={h} title={`${d} ${h}:00 — ${fmtBs(data[di]?.[h]||0)}`}
+              onMouseEnter={()=>setHov({d,h,v:data[di]?.[h]||0})} onMouseLeave={()=>setHov(null)}
+              style={{height:18,borderRadius:2,background:col(data[di]?.[h]||0),cursor:"pointer",outline:hov?.d===d&&hov?.h===h?`1px solid ${T.cyan}`:"none"}}/>
+          ))
+        ])}
+      </div>
+      {hov&&<div style={{marginTop:8,fontFamily:T.mono,fontSize:11,color:T.muted}}>{hov.d} {hov.h}:00 — <span style={{color:T.cyan}}>{fmtBs(hov.v)}</span></div>}
+    </div>
+  );
+};
+
+/* ─── ANALYTICS TAB ───────────────────────────────────────────────────────── */
+const AnalyticsTab = ({authedFetch, t}) => {
+  const [data,  setData]  = useState(null);
+  const [loading,setLoad] = useState(true);
+  const [hours, setHours] = useState(24);
+
+  const load = useCallback(async () => {
+    setLoad(true);
+    try {
+      const r = await authedFetch(`${API}/analytics/summary?hours=${hours}`);
+      setData(await r.json());
+    } catch(e) { console.error(e); }
+    finally { setLoad(false); }
+  }, [authedFetch, hours]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,color:T.muted,fontFamily:T.mono}}>{t("general.loading")}</div>;
+  if (!data)   return <div style={{color:T.muted,padding:20,fontFamily:T.mono}}>{t("general.error")}</div>;
+
+  const bwChartData = (data.hourly_bandwidth||[]).map(r=>({h:r.hour?.slice(11)||"",bps:r.peak_bps||0,bytes:r.total_bytes||0}));
+  const topIpData   = (data.top_ips||[]).slice(0,8).map(r=>({ip:r.ip.slice(-11),sent:r.total_sent||0,recv:r.total_recv||0}));
+  const topPortData = (data.top_ports||[]).slice(0,10).map(r=>({port:String(r.dst_port),bytes:r.total_bytes||0,proto:r.proto}));
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+      {/* Stats row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}}>
+        <Stat label={t("analytics.total_bytes")}  value={fmtB(data.total_bytes)}        color={T.cyan}/>
+        <Stat label={t("analytics.peak_bps")}     value={fmtBs(data.peak_bps)}          color={T.violet}/>
+        <Stat label={t("analytics.unique_hosts")} value={data.unique_hosts}             color={T.text}/>
+        <Stat label={t("analytics.alerts")}       value={data.alerts_total}             color={data.alerts_total>0?T.amber:T.green}/>
+        <Stat label={t("analytics.alerts_high")}  value={data.alerts_high}              color={data.alerts_high>0?T.red:T.green}/>
+        <Stat label="Period"                     value={`${data.period_hours}h`}        color={T.muted}/>
+      </div>
+
+      {/* Bandwidth trend */}
+      <Card>
+        <CTitle right={
+          <div style={{display:"flex",gap:8}}>
+            {[6,12,24,48].map(h=>(
+              <span key={h} onClick={()=>setHours(h)} style={{cursor:"pointer",
+                color:hours===h?T.cyan:T.muted,fontWeight:hours===h?700:400}}>
+                {h}h
+              </span>
+            ))}
+            <Btn onClick={load} color={T.muted} style={{padding:"1px 7px",fontSize:10}}>↺</Btn>
+          </div>
+        }>{t("analytics.bw_trend")}</CTitle>
+        <ResponsiveContainer width="100%" height={140}>
+          <AreaChart data={bwChartData}>
+            <defs><linearGradient id="abwg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={T.cyan} stopOpacity={.3}/><stop offset="95%" stopColor={T.cyan} stopOpacity={0}/></linearGradient></defs>
+            <CartesianGrid stroke={T.border} strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="h" tick={{fill:T.muted,fontSize:9}}/>
+            <YAxis tickFormatter={v=>fmtBs(v)} tick={{fill:T.muted,fontSize:9}} width={72}/>
+            <Tooltip content={<CTip fmt={v=>fmtBs(v)}/>}/>
+            <Area type="monotone" dataKey="bps" stroke={T.cyan} strokeWidth={1.5} fill="url(#abwg)" dot={false} isAnimationActive={false}/>
+          </AreaChart>
+        </ResponsiveContainer>
+      </Card>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        {/* Top IPs */}
+        <Card>
+          <CTitle right={`${(data.top_ips||[]).length} IP`}>{t("analytics.top_ips")}</CTitle>
+          {topIpData.length === 0
+            ? <div style={{color:T.muted,fontSize:12,fontFamily:T.mono,padding:"16px 0"}}>{t("general.no_data")}</div>
+            : <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={topIpData} layout="vertical">
+                  <CartesianGrid stroke={T.border} strokeDasharray="3 3" horizontal={false}/>
+                  <XAxis type="number" tickFormatter={v=>fmtB(v)} tick={{fill:T.muted,fontSize:9}}/>
+                  <YAxis type="category" dataKey="ip" tick={{fill:T.text,fontSize:10,fontFamily:T.mono}} width={100}/>
+                  <Tooltip formatter={(v,n)=>[fmtB(v),n==="sent"?"↑ Inviati":"↓ Ricevuti"]}/>
+                  <Bar dataKey="sent" fill={T.cyan+"99"} radius={[0,3,3,0]} isAnimationActive={false}/>
+                  <Bar dataKey="recv" fill={T.violet+"99"} radius={[0,3,3,0]} isAnimationActive={false}/>
+                </BarChart>
+              </ResponsiveContainer>
+          }
+        </Card>
+
+        {/* Top Ports */}
+        <Card>
+          <CTitle right={`${(data.top_ports||[]).length} porte`}>{t("analytics.top_ports")}</CTitle>
+          {topPortData.length === 0
+            ? <div style={{color:T.muted,fontSize:12,fontFamily:T.mono,padding:"16px 0"}}>{t("general.no_data")}</div>
+            : <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={topPortData} layout="vertical">
+                  <CartesianGrid stroke={T.border} strokeDasharray="3 3" horizontal={false}/>
+                  <XAxis type="number" tickFormatter={v=>fmtB(v)} tick={{fill:T.muted,fontSize:9}}/>
+                  <YAxis type="category" dataKey="port" tick={{fill:T.text,fontSize:10,fontFamily:T.mono}} width={45}/>
+                  <Tooltip formatter={v=>[fmtB(v),"Traffic"]}/>
+                  <Bar dataKey="bytes" isAnimationActive={false} radius={[0,3,3,0]}>
+                    {topPortData.map((d,i)=><Cell key={i} fill={PROTO_C[d.proto]||T.muted}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+          }
+        </Card>
+      </div>
+
+      {/* Alert timeline */}
+      <Card>
+        <CTitle>{t("chart.alert_timeline")}</CTitle>
+        {(data.alert_timeline||[]).length === 0
+          ? <div style={{color:T.muted,fontSize:12,fontFamily:T.mono,padding:"8px 0"}}>{t("general.no_data")}</div>
+          : <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={(data.alert_timeline||[]).map(r=>({h:r.hour?.slice(11)||"",v:r.count||0,sev:r.severity}))}>
+                <CartesianGrid stroke={T.border} strokeDasharray="3 3" vertical={false}/>
+                <XAxis dataKey="h" tick={{fill:T.muted,fontSize:9}}/>
+                <YAxis hide/>
+                <Tooltip formatter={v=>[v,"Alerts"]}/>
+                <Bar dataKey="v" isAnimationActive={false} radius={[2,2,0,0]}>
+                  {(data.alert_timeline||[]).map((r,i)=><Cell key={i} fill={SEV_C[r.severity]||T.muted}/>)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+        }
+      </Card>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  MAIN APP                                                                   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+export default function App() {
+  const { token, user, logout, authedFetch, checked } = useAuth();
+  const { t, lang } = useI18n();
+
+  const [tab,setTab]         = useState("overview");
+  const [live,setLive]       = useState(false);
+  const [reconnecting,setReconn] = useState(false);
+  const [snap,setSnap]       = useState(null);
+  const [bwSeries,setBw]     = useState([]);
+  const [ppsSeries,setPps]   = useState([]);
+  const [protoCum,setProto]  = useState({TCP:0,UDP:0,ICMP:0});
+  const [alerts,setAlerts]   = useState([]);
+  const [hosts,setHosts]     = useState([]);
+  const [scans,setScans]     = useState([]);
+  const [scanPorts,setScanPorts] = useState([]);
+  const [vulns,setVulns]     = useState([]);
+  const [heatData,setHeat]   = useState(()=>Array.from({length:7},()=>Array(24).fill(0)));
+  const [peakBw,setPeak]     = useState(0);
+  const [uptime,setUp]       = useState(0);
+  const [extHosts,setExt]    = useState([]);
+  const [selScan,setSelScan] = useState("syn");
+  const [scanTarget,setTarget]= useState("192.168.1.0/24");
+  const [scanPortsInput,setSPI]= useState("1-1024");
+  const [scanning,setScanning]= useState(false);
+  const [scanProg,setSProg]  = useState(0);
+  const [flowFilter,setFF]   = useState("");
+  const [flowProto,setFP]    = useState("");
+  const [hostFilter,setHF]   = useState("");
+  const [alertFilter,setAF]  = useState("");
+  const [selScanId,setSelScanId]=useState(null);
+
+  const evtRef    = useRef(null);
+  const scanIntRef= useRef(null);
+  const reconnRef = useRef(null);
+
+  // ── Uptime counter ──────────────────────────────────────────────────────
+  useEffect(()=>{ const t=setInterval(()=>setUp(u=>u+1),1000); return()=>clearInterval(t); },[]);
+
+  // ── Process snapshot ────────────────────────────────────────────────────
+  const processSnap = useCallback(s=>{
+    const bps=s.bytes_per_sec ?? (s.total_bytes||0)/Math.max(s.window_sec||1,.001);
+    const pps=s.packets_per_sec ?? (s.total_packets||0)/Math.max(s.window_sec||1,.001);
+    const ts=now8();
+    s.bytes_per_sec=bps; s.packets_per_sec=pps;
+    setSnap(s);
+    setPeak(p=>Math.max(p,bps));
+    setBw(prev=>[...prev.slice(-59),{t:ts,v:Math.round(bps)}]);
+    setPps(prev=>[...prev.slice(-59),{t:ts,v:Math.round(pps)}]);
+    setProto(prev=>{ const next={...prev}; (s.top_flows||[]).forEach(f=>{ next[f.proto]=(next[f.proto]||0)+(f.bytes||0); }); return next; });
+    if(s.alerts?.length){
+      setAlerts(prev=>[...s.alerts.map(a=>({...a,ts,id:Date.now()+Math.random(),acked:false})),...prev].slice(0,300));
+    }
+    const now=new Date();
+    const dayIdx=(now.getDay()+6)%7;
+    const hourIdx=now.getHours();
+    setHeat(prev=>{ const next=prev.map(r=>[...r]); next[dayIdx][hourIdx]=(next[dayIdx][hourIdx]||0)+bps; return next; });
+    const extMap={};
+    (s.top_hosts||[]).forEach(h=>{ if(h.geo&&!h.geo.private&&h.geo.lat!=null) extMap[h.ip]={ip:h.ip,geo:h.geo,total:(h.bytes_sent||0)+(h.bytes_recv||0)}; });
+    setExt(Object.values(extMap));
+  },[]);
+
+  // ── SSE with auto-reconnect ─────────────────────────────────────────────
+  useEffect(()=>{
+    if (!token) return;
+    let retries = 0;
+    const MAX_RETRY_DELAY = 30000;
+
+    const connect = () => {
+      setReconn(retries > 0);
+      const url = `${API}/stream${token && token !== "no-auth" ? `?token=${token}` : ""}`;
+      const es = new EventSource(url);
+      evtRef.current = es;
+      es.onopen = () => { setLive(true); setReconn(false); retries = 0; };
+      es.onerror = () => {
+        setLive(false);
+        es.close();
+        retries++;
+        const delay = Math.min(1000 * Math.pow(2, retries - 1), MAX_RETRY_DELAY);
+        setReconn(true);
+        reconnRef.current = setTimeout(connect, delay);
+      };
+      es.onmessage = e => { try { processSnap(JSON.parse(e.data)); } catch {} };
+    };
+    connect();
+    return () => {
+      evtRef.current?.close();
+      clearTimeout(reconnRef.current);
+    };
+  },[token, processSnap]);
+
+  // ── REST polling ────────────────────────────────────────────────────────
+  const loadRest = useCallback(async()=>{
+    try {
+      const [hr,sr,vr] = await Promise.all([
+        authedFetch(`${API}/hosts`).then(r=>r.json()).catch(()=>[]),
+        authedFetch(`${API}/scans`).then(r=>r.json()).catch(()=>[]),
+        authedFetch(`${API}/vulnerabilities`).then(r=>r.json()).catch(()=>[]),
+      ]);
+      if(Array.isArray(hr)) setHosts(hr);
+      if(Array.isArray(sr)) setScans(sr);
+      if(Array.isArray(vr)) setVulns(vr);
+    } catch{}
+  },[authedFetch]);
+
+  useEffect(()=>{ loadRest(); const t=setInterval(loadRest,30000); return()=>clearInterval(t); },[loadRest]);
+
+  useEffect(()=>{
+    if(!selScanId)return;
+    authedFetch(`${API}/scans/${selScanId}/ports`).then(r=>r.json()).then(setScanPorts).catch(()=>{});
+  },[selScanId, authedFetch]);
+
+  // ── Nmap scan ────────────────────────────────────────────────────────────
+  const launchScan = async()=>{
+    if(scanning)return;
+    setScanning(true); setSProg(0);
+    try{
+      const res=await authedFetch(`${API}/scans`,{method:"POST",headers:{"Content-Type":"application/json"},
+                                  body:JSON.stringify({scan_type:selScan,target:scanTarget,ports:scanPortsInput})});
+      const {scan_id}=await res.json();
+      const poll=setInterval(async()=>{
+        setSProg(p=>Math.min(p+3,90));
+        const sr=await authedFetch(`${API}/scans/${scan_id}`).then(r=>r.json()).catch(()=>null);
+        if(sr&&sr.status!=="running"){ clearInterval(poll); setSProg(100); setScanning(false); setSelScanId(scan_id); loadRest(); setTimeout(()=>setSProg(0),1500); }
+      },2000);
+      scanIntRef.current=poll;
+    }catch{ setScanning(false); }
+  };
+
+  // ── Export helpers ───────────────────────────────────────────────────────
+  const exportFile = async (endpoint, filename) => {
+    try {
+      const res = await authedFetch(`${API}${endpoint}`);
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) { console.error("Export failed", e); }
+  };
+
+  // ── Computed ─────────────────────────────────────────────────────────────
+  const unacked   = alerts.filter(a=>!a.acked).length;
+  const fmtUp     = ()=>{ const m=Math.floor(uptime/60),s=uptime%60; return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; };
+  const realFlows = (snap?.top_flows||[]).filter(f=>{ const q=flowFilter.toLowerCase(); return(!q||(f.src_ip+f.dst_ip+f.dst_port+f.proto).toLowerCase().includes(q))&&(!flowProto||f.proto===flowProto); });
+  const realHosts = hosts.filter(h=>!hostFilter||(h.ip+h.hostname).toLowerCase().includes(hostFilter.toLowerCase()));
+  const filtAlerts= alerts.filter(a=>{ if(!alertFilter)return true; if(["high","medium","low"].includes(alertFilter))return a.sev===alertFilter||a.severity===alertFilter; return a.type===alertFilter; });
+  const protoChartData=Object.entries(protoCum).map(([k,v])=>({name:k,value:v})).filter(d=>d.value>0);
+  const graphHosts=(snap?.top_hosts||[]).length>0?snap.top_hosts:hosts.slice(0,10).map(h=>({...h,bytes_sent:h.live?.bytes_sent||0,bytes_recv:h.live?.bytes_recv||0}));
+
+  const SCAN_TYPES=[
+    {id:"ping",label:"Ping Sweep",desc:"-sn",root:false,cat:"Discovery"},
+    {id:"arp",label:"ARP Scan",desc:"-PR",root:true,cat:"Discovery"},
+    {id:"syn",label:"SYN Stealth",desc:"-sS",root:true,cat:"Port Scan"},
+    {id:"tcp_connect",label:"TCP Connect",desc:"-sT",root:false,cat:"Port Scan"},
+    {id:"udp",label:"UDP Scan",desc:"-sU",root:true,cat:"Port Scan"},
+    {id:"ack",label:"ACK Scan",desc:"-sA",root:true,cat:"Port Scan"},
+    {id:"null",label:"NULL Scan",desc:"-sN",root:true,cat:"Evasion"},
+    {id:"fin",label:"FIN Scan",desc:"-sF",root:true,cat:"Evasion"},
+    {id:"xmas",label:"Xmas Scan",desc:"-sX",root:true,cat:"Evasion"},
+    {id:"window",label:"Window Scan",desc:"-sW",root:true,cat:"Evasion"},
+    {id:"version",label:"Version Det.",desc:"-sV",root:false,cat:"Detection"},
+    {id:"os_detect",label:"OS Detect",desc:"-O",root:true,cat:"Detection"},
+    {id:"aggressive",label:"Aggressive",desc:"-A",root:true,cat:"Detection"},
+    {id:"vuln",label:"Vuln Scan",desc:"--script vuln",root:true,cat:"Scripts"},
+    {id:"auth",label:"Auth Check",desc:"--script auth",root:false,cat:"Scripts"},
+    {id:"default_scr",label:"Default NSE",desc:"-sC",root:false,cat:"Scripts"},
+    {id:"safe",label:"Safe Scripts",desc:"--script safe",root:false,cat:"Scripts"},
+    {id:"slow_comp",label:"Paranoid -T0",desc:"-T0 -sS",root:true,cat:"Timing"},
+    {id:"fast",label:"Fast -T4",desc:"-T4 -F",root:false,cat:"Timing"},
+  ];
+
+  const heatDays = t("heatmap.days");
+
+  const TABS=[
+    {id:"overview",  label:t("tab.overview")},
+    {id:"map",       label:t("tab.map")},
+    {id:"graph",     label:t("tab.graph")},
+    {id:"flows",     label:t("tab.flows")},
+    {id:"hosts",     label:t("tab.hosts")},
+    {id:"heatmap",   label:t("tab.heatmap")},
+    {id:"alerts",    label:`${t("tab.alerts")}${unacked>0?` (${unacked})`:""}`, col:unacked>0?T.red:undefined},
+    {id:"analytics", label:t("tab.analytics")},
+    {id:"dns",       label:t("tab.dns")},
+    {id:"nmap",      label:t("tab.nmap")},
+    {id:"vulns",     label:t("tab.vulns")},
+    {id:"config",    label:t("tab.config")},
+  ];
+
+  // ── Show login if not authenticated ─────────────────────────────────────
+  if (!checked) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,color:T.muted,fontFamily:T.mono,fontSize:13}}>Initializing…</div>;
+  if (!token)   return <><GS/><LoginScreen t={t}/></>;
+
+  /* ── RENDER ─────────────────────────────────────────────────────────────── */
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:T.bg,overflow:"hidden"}}>
+      <GS/>
+
+      {/* ── HEADER ── */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 20px",background:T.s1,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:26,height:26,border:`2px solid ${T.cyan}`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.cyan,fontWeight:800}}>⬡</div>
+          <span style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>NetWatch</span>
+          <span style={{fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:T.muted}}>v4</span>
+          <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:4}}>
+            {reconnecting
+              ? <><span style={{fontSize:10,fontFamily:T.mono,color:T.amber,animation:"pulse 1s infinite"}}>⟳ RECONNECTING</span></>
+              : <><Pdot color={live?T.green:T.red}/><span style={{fontSize:10,fontFamily:T.mono,color:live?T.green:T.red}}>{live?t("header.live"):t("header.offline")}</span></>
+            }
+          </div>
+        </div>
+        <div style={{display:"flex",gap:18,fontFamily:T.mono,fontSize:11,color:T.muted,alignItems:"center"}}>
+          {[[t("header.bw"),fmtBs(snap?.bytes_per_sec),T.cyan],[t("header.pps"),Math.round(snap?.packets_per_sec||0),T.violet],
+            [t("header.flows"),snap?.active_flows||0,T.text],[t("header.alerts"),unacked,unacked>0?T.red:T.text],[t("header.uptime"),fmtUp(),T.green]
+          ].map(([k,v,c])=><span key={k}>{k} <span style={{color:c,fontWeight:600}}>{v}</span></span>)}
+          <span style={{color:T.muted}}>{now8()}</span>
+          <span style={{color:T.muted,fontSize:10,borderLeft:`1px solid ${T.border}`,paddingLeft:12}}>
+            {user} <span onClick={logout} style={{color:T.red,cursor:"pointer",marginLeft:6}}>{t("auth.logout")}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* ── NAV ── */}
+      <div style={{display:"flex",gap:1,padding:"0 20px",background:T.s1,borderBottom:`1px solid ${T.border}`,flexShrink:0,overflowX:"auto"}}>
+        {TABS.map(tab_item=>(
+          <div key={tab_item.id} onClick={()=>setTab(tab_item.id)}
+            style={{padding:"9px 13px",fontSize:11,fontWeight:700,letterSpacing:.5,cursor:"pointer",
+              borderBottom:`2px solid ${tab===tab_item.id?T.cyan:"transparent"}`,
+              color:tab===tab_item.id?T.cyan:(tab_item.col||T.muted),transition:"all .15s",textTransform:"uppercase",whiteSpace:"nowrap"}}>
+            {tab_item.label}
+          </div>
+        ))}
+      </div>
+
+      {/* ── BODY ── */}
+      <div style={{flex:1,overflow:"auto",padding:"16px 20px"}}>
+
+        {/* ═══ OVERVIEW ═══ */}
+        {tab==="overview"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}}>
+              <Stat label={t("stat.bandwidth")}   value={fmtBs(snap?.bytes_per_sec)}          color={T.cyan}   sub={`${t("stat.peak")} ${fmtBs(peakBw)}`}/>
+              <Stat label={t("stat.packets_s")}   value={Math.round(snap?.packets_per_sec||0)} color={T.violet} sub={t("stat.live")}/>
+              <Stat label={t("stat.flows")}       value={snap?.active_flows||0}                               sub={t("stat.active")}/>
+              <Stat label={t("stat.hosts_seen")}  value={snap?.top_hosts?.length||0}                          sub={t("stat.in_window")}/>
+              <Stat label={t("stat.alerts")}      value={unacked} color={unacked>0?T.red:T.green}              sub={t("stat.unread")}/>
+              <Stat label={t("stat.uptime")}      value={fmtUp()} color={T.green}                             sub={t("stat.monitoring")}/>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <Card>
+                <CTitle right={fmtBs(snap?.bytes_per_sec)}>{t("chart.bw_live")}</CTitle>
+                {bwSeries.length===0
+                  ? <div style={{height:140,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12,fontFamily:T.mono}}>{t("general.waiting")}</div>
+                  : <ResponsiveContainer width="100%" height={140}>
+                      <AreaChart data={bwSeries}>
+                        <defs><linearGradient id="bwg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={T.cyan} stopOpacity={.3}/><stop offset="95%" stopColor={T.cyan} stopOpacity={0}/></linearGradient></defs>
+                        <CartesianGrid stroke={T.border} strokeDasharray="3 3" vertical={false}/>
+                        <XAxis dataKey="t" hide/><YAxis tickFormatter={v=>fmtBs(v)} tick={{fill:T.muted,fontSize:9}} width={72}/>
+                        <Tooltip content={<CTip fmt={v=>fmtBs(v)}/>}/>
+                        <Area type="monotone" dataKey="v" stroke={T.cyan} strokeWidth={1.5} fill="url(#bwg)" dot={false} isAnimationActive={false}/>
+                      </AreaChart>
+                    </ResponsiveContainer>}
+              </Card>
+              <Card>
+                <CTitle right={`${Math.round(snap?.packets_per_sec||0)} pps`}>{t("chart.pps")}</CTitle>
+                {ppsSeries.length===0
+                  ? <div style={{height:140,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12,fontFamily:T.mono}}>{t("general.waiting")}</div>
+                  : <ResponsiveContainer width="100%" height={140}>
+                      <AreaChart data={ppsSeries}>
+                        <defs><linearGradient id="ppsg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={T.violet} stopOpacity={.3}/><stop offset="95%" stopColor={T.violet} stopOpacity={0}/></linearGradient></defs>
+                        <CartesianGrid stroke={T.border} strokeDasharray="3 3" vertical={false}/>
+                        <XAxis dataKey="t" hide/><YAxis tick={{fill:T.muted,fontSize:9}} width={40}/>
+                        <Tooltip content={<CTip fmt={v=>`${v} pps`}/>}/>
+                        <Area type="monotone" dataKey="v" stroke={T.violet} strokeWidth={1.5} fill="url(#ppsg)" dot={false} isAnimationActive={false}/>
+                      </AreaChart>
+                    </ResponsiveContainer>}
+              </Card>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:14}}>
+              <Card>
+                <CTitle>{t("chart.protocols")}</CTitle>
+                {protoChartData.length===0
+                  ? <div style={{height:160,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12}}>{t("general.no_data")}</div>
+                  : <ResponsiveContainer width="100%" height={160}>
+                      <PieChart><Pie data={protoChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value" isAnimationActive={false}>
+                        {protoChartData.map(d=><Cell key={d.name} fill={PROTO_C[d.name]||T.muted}/>)}
+                      </Pie><Tooltip formatter={(v,n)=>[fmtB(v),n]}/><Legend iconSize={8} formatter={v=><span style={{fontSize:10,color:T.muted}}>{v}</span>}/></PieChart>
+                    </ResponsiveContainer>}
+              </Card>
+              <Card>
+                <CTitle>{t("chart.top_hosts")}</CTitle>
+                {!(snap?.top_hosts?.length)
+                  ? <div style={{height:160,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12,fontFamily:T.mono}}>{t("general.waiting")}</div>
+                  : <ResponsiveContainer width="100%" height={160}>
+                      <BarChart data={(snap.top_hosts||[]).map(h=>({ip:h.ip,sent:h.bytes_sent||0,recv:h.bytes_recv||0}))} layout="vertical">
+                        <CartesianGrid stroke={T.border} strokeDasharray="3 3" horizontal={false}/>
+                        <XAxis type="number" tickFormatter={v=>fmtB(v)} tick={{fill:T.muted,fontSize:9}}/>
+                        <YAxis type="category" dataKey="ip" tick={{fill:T.text,fontSize:10,fontFamily:T.mono}} width={110}/>
+                        <Tooltip formatter={(v,n)=>[fmtB(v),n==="sent"?"↑ Sent":"↓ Recv"]}/>
+                        <Bar dataKey="sent" fill={T.cyan+"99"} radius={[0,3,3,0]} isAnimationActive={false}/>
+                        <Bar dataKey="recv" fill={T.violet+"99"} radius={[0,3,3,0]} isAnimationActive={false}/>
+                      </BarChart>
+                    </ResponsiveContainer>}
+              </Card>
+            </div>
+
+            {alerts.length>0&&(
+              <Card>
+                <CTitle right={<Btn onClick={()=>setAlerts(p=>p.map(a=>({...a,acked:true})))} color={T.muted} style={{padding:"2px 8px",fontSize:10}}>{t("alerts.mark_all")}</Btn>}>{t("alerts.recent")}</CTitle>
+                {alerts.slice(0,5).map((a,i)=>{ const sev=a.sev||a.severity||"low"; return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:7,border:`1px solid ${SEV_C[sev]||T.border}33`,background:(SEV_C[sev]||T.muted)+"08",marginBottom:5,opacity:a.acked?.4:1}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:SEV_C[sev]||T.muted,flexShrink:0}}/><Badge color={SEV_C[sev]||T.muted}>{sev.toUpperCase()}</Badge>
+                    <span style={{fontFamily:T.mono,fontSize:11,fontWeight:600,color:T.text,minWidth:150}}>{a.type}</span>
+                    <span style={{color:T.muted,fontSize:11,flex:1}}>{a.detail}</span>
+                    <span style={{color:T.muted,fontSize:10}}>{a.ts}</span>
+                  </div>
+                );})}
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* ═══ MAPPA GEO ═══ */}
+        {tab==="map"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 260px",gap:14}}>
+              <Card>
+                <CTitle right={`${extHosts.length} ${t("map.detected")}`}>{t("map.title")}</CTitle>
+                {extHosts.length===0
+                  ? <div style={{height:340,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12,fontFamily:T.mono}}>{t("map.none")}</div>
+                  : <WorldMap extHosts={extHosts}/>}
+              </Card>
+              <Card style={{overflowY:"auto",maxHeight:420}}>
+                <CTitle>{t("map.external_ips")}</CTitle>
+                {extHosts.length===0&&<div style={{color:T.muted,fontSize:12,fontFamily:T.mono}}>None yet…</div>}
+                {extHosts.map((h,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
+                    <span style={{fontSize:16}}>{FLAG(h.geo?.cc)}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:T.mono,fontSize:11,color:T.cyan,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.ip}</div>
+                      <div style={{fontSize:10,color:T.muted}}>{h.geo?.city}, {h.geo?.cc}</div>
+                      <div style={{fontSize:9,color:T.muted}}>{h.geo?.isp}</div>
+                    </div>
+                    <div style={{fontSize:10,fontFamily:T.mono,color:T.amber}}>{fmtB(h.total)}</div>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ NETWORK GRAPH ═══ */}
+        {tab==="graph"&&(
+          <div style={{animation:"fadeIn .3s ease"}}>
+            <Card>
+              <CTitle right="Nodes = Hosts · Edges = Flows · Size = Bandwidth">Live Network Graph</CTitle>
+              <NetGraph hosts={graphHosts} flows={snap?.top_flows||[]}/>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ FLUSSI ═══ */}
+        {tab==="flows"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input value={flowFilter} onChange={e=>setFF(e.target.value)} placeholder={t("flows.filter")} style={{maxWidth:300}}/>
+              <select value={flowProto} onChange={e=>setFP(e.target.value)} style={{width:90}}>
+                <option value="">{t("flows.all")}</option><option>TCP</option><option>UDP</option><option>ICMP</option>
+              </select>
+              <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.muted}}>{realFlows.length} {t("flows.count")}</span>
+              <Btn onClick={()=>exportFile("/export/snapshots.json","netwatch_snapshots.json")} color={T.muted} style={{fontSize:10,padding:"4px 10px"}}>{t("general.export")} JSON</Btn>
+            </div>
+            <Card>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>{[t("flows.src"),"→",t("flows.dst"),t("flows.dst_port"),t("flows.proto"),t("flows.bytes"),t("flows.packets"),t("flows.http_host")].map(h=>(
+                    <th key={h} style={{color:T.muted,textAlign:"left",padding:"6px 8px",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}</tr></thead>
+                  <tbody>
+                    {realFlows.length===0&&(<tr><td colSpan={8} style={{padding:"24px 8px",color:T.muted,textAlign:"center",fontFamily:T.mono,fontSize:12}}>{snap?t("flows.no_filter"):t("flows.waiting")}</td></tr>)}
+                    {realFlows.map((f,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.cyan}}>{f.src_ip}</td>
+                        <td style={{padding:"7px 8px",color:T.muted}}>→</td>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.text}}>{f.dst_ip}</td>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.muted}}>{f.dst_port}</td>
+                        <td style={{padding:"7px 8px"}}><Badge color={PROTO_C[f.proto]||T.muted}>{f.proto}</Badge></td>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.green}}>{fmtB(f.bytes)}</td>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.muted}}>{f.packets}</td>
+                        <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:10,color:T.amber}}>{f.http_host||""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ HOST ═══ */}
+        {tab==="hosts"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"flex",gap:8}}>
+              <input value={hostFilter} onChange={e=>setHF(e.target.value)} placeholder={t("hosts.filter")} style={{maxWidth:300}}/>
+              <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.muted}}>{realHosts.length} {t("hosts.count")}</span>
+              <Btn onClick={()=>exportFile("/export/hosts.csv","netwatch_hosts.csv")} color={T.muted} style={{fontSize:10,padding:"4px 10px"}}>{t("general.export")} CSV</Btn>
+            </div>
+            <Card>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>{[t("hosts.ip"),t("hosts.hostname"),t("hosts.os"),t("hosts.mac"),t("hosts.type"),t("hosts.sent"),t("hosts.recv"),t("hosts.last_seen")].map(h=>(
+                  <th key={h} style={{color:T.muted,textAlign:"left",padding:"6px 8px",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,fontWeight:500}}>{h}</th>
+                ))}</tr></thead>
+                <tbody>
+                  {realHosts.length===0&&<tr><td colSpan={8} style={{padding:"24px",color:T.muted,textAlign:"center",fontFamily:T.mono,fontSize:12}}>{t("hosts.empty")}</td></tr>}
+                  {realHosts.map((h,i)=>{ const isInt=/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h.ip); const live=h.live||{}; return (
+                    <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                      <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.cyan}}>{h.ip}</td>
+                      <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.text}}>{h.hostname||"—"}</td>
+                      <td style={{padding:"8px",fontSize:11,color:T.muted}}>{h.os_guess||"—"}</td>
+                      <td style={{padding:"8px",fontFamily:T.mono,fontSize:10,color:T.muted}}>{h.vendor||h.mac||"—"}</td>
+                      <td style={{padding:"8px"}}><Badge color={isInt?T.green:T.pink}>{isInt?t("hosts.internal"):t("hosts.external")}</Badge></td>
+                      <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.green}}>{fmtB(live.bytes_sent)}</td>
+                      <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.violet}}>{fmtB(live.bytes_recv)}</td>
+                      <td style={{padding:"8px",fontSize:10,color:T.muted}}>{h.last_seen?.slice(11,19)||"—"}</td>
+                    </tr>
+                  );})}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ HEATMAP ═══ */}
+        {tab==="heatmap"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+            <Card>
+              <CTitle right={t("heatmap.sub")}>{t("chart.heatmap")}</CTitle>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,fontSize:10,fontFamily:T.mono,color:T.muted}}>
+                <span>{t("heatmap.less")}</span>
+                {["#0f2040","#0a3a5c","#0e5a8a","#0090c8",T.cyan].map(c=><div key={c} style={{width:13,height:13,borderRadius:2,background:c}}/>)}
+                <span>{t("heatmap.more")}</span>
+              </div>
+              <Heatmap data={heatData} days={Array.isArray(heatDays)?heatDays:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}/>
+            </Card>
+            <Card>
+              <CTitle>{t("chart.bw_hourly")}</CTitle>
+              <ResponsiveContainer width="100%" height={150}>
+                <BarChart data={Array.from({length:24},(_,i)=>({h:`${i}:00`,v:heatData[(new Date().getDay()+6)%7]?.[i]||0}))}>
+                  <CartesianGrid stroke={T.border} strokeDasharray="3 3" vertical={false}/>
+                  <XAxis dataKey="h" tick={{fill:T.muted,fontSize:9}}/>
+                  <YAxis tickFormatter={v=>fmtBs(v)} tick={{fill:T.muted,fontSize:9}} width={68}/>
+                  <Tooltip formatter={v=>fmtBs(v)}/>
+                  <Bar dataKey="v" fill={T.green+"88"} radius={[3,3,0,0]} isAnimationActive={false}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ ALERT ═══ */}
+        {tab==="alerts"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <select value={alertFilter} onChange={e=>setAF(e.target.value)} style={{width:180}}>
+                <option value="">{t("alerts.all")}</option>
+                <option value="high">{t("alerts.high")}</option>
+                <option value="medium">{t("alerts.medium")}</option>
+                <option value="PORT_SCAN">PORT_SCAN</option>
+                <option value="DNS_TUNNEL">DNS_TUNNEL</option>
+                <option value="HIGH_BANDWIDTH">HIGH_BANDWIDTH</option>
+                <option value="SUSPICIOUS_PORT">SUSPICIOUS_PORT</option>
+                <option value="EXT_SCAN">EXT_SCAN</option>
+                <option value="FLOW_SPIKE">FLOW_SPIKE</option>
+              </select>
+              <Btn onClick={()=>setAlerts(p=>p.map(a=>({...a,acked:true})))} color={T.muted}>{t("alerts.mark_all")}</Btn>
+              <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.muted}}>{filtAlerts.length} {t("alerts.count")} · {unacked} {t("alerts.unread")}</span>
+              <Btn onClick={()=>exportFile("/export/alerts.csv","netwatch_alerts.csv")} color={T.muted} style={{fontSize:10,padding:"4px 10px"}}>{t("general.export")} CSV</Btn>
+            </div>
+            <Card>
+              <CTitle>{t("chart.alert_timeline")}</CTitle>
+              <ResponsiveContainer width="100%" height={90}>
+                <BarChart data={Array.from({length:20},(_,i)=>({t:i,v:alerts.filter((_,ai)=>Math.floor(ai/5)===i).length}))}>
+                  <Bar dataKey="v" fill={T.red+"88"} radius={[2,2,0,0]} isAnimationActive={false}/>
+                  <XAxis hide/><YAxis hide/><Tooltip formatter={v=>[v,"Alerts"]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+            <Card>
+              <div style={{maxHeight:450,overflowY:"auto"}}>
+                {filtAlerts.length===0&&<div style={{color:T.muted,padding:"24px",textAlign:"center",fontFamily:T.mono,fontSize:12}}>
+                  {alerts.length===0?t("alerts.empty"):t("alerts.no_filter")}
+                </div>}
+                {filtAlerts.map((a,i)=>{ const sev=a.sev||a.severity||"low"; return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:7,border:`1px solid ${SEV_C[sev]||T.border}33`,background:(SEV_C[sev]||T.muted)+"08",marginBottom:6,opacity:a.acked?.4:1,animation:"fadeIn .2s ease"}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:SEV_C[sev]||T.muted,flexShrink:0}}/><Badge color={SEV_C[sev]||T.muted}>{sev.toUpperCase()}</Badge>
+                    <span style={{fontFamily:T.mono,fontSize:11,fontWeight:600,color:T.text,minWidth:160}}>{a.type}</span>
+                    <span style={{color:T.muted,fontSize:11,flex:1}}>{a.detail}</span>
+                    <span style={{color:T.muted,fontSize:10,marginRight:8}}>{a.ts}</span>
+                    {!a.acked&&<Btn onClick={()=>setAlerts(p=>p.map((x,j)=>j===i?{...x,acked:true}:x))} color={T.muted} style={{padding:"2px 8px",fontSize:10}}>{t("alerts.ack")}</Btn>}
+                  </div>
+                );})}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ ANALYTICS ═══ */}
+        {tab==="analytics"&&<AnalyticsTab authedFetch={authedFetch} t={t}/>}
+
+        {/* ═══ DNS ═══ */}
+        {tab==="dns"&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,animation:"fadeIn .3s ease"}}>
+            <Card>
+              <CTitle>{t("dns.queries")}</CTitle>
+              <div style={{maxHeight:480,overflowY:"auto"}}>
+                {!(snap?.dns_log?.length)
+                  ? <div style={{color:T.muted,padding:"20px 0",fontFamily:T.mono,fontSize:12}}>{t("dns.none")}</div>
+                  : snap.dns_log.map((d,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
+                      <span style={{fontFamily:T.mono,fontSize:10,color:T.muted,minWidth:22}}>{i+1}.</span>
+                      <div style={{flex:1}}><div style={{fontFamily:T.mono,fontSize:11,color:T.cyan}}>{d.query}</div><div style={{fontSize:10,color:T.muted}}>{t("general.from")} {d.client}</div></div>
+                      <Badge color={T.violet}>A</Badge>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+            <Card>
+              <CTitle>{t("dns.beaconing")}</CTitle>
+              <div style={{maxHeight:480,overflowY:"auto"}}>
+                {!(snap?.beacons?.length)
+                  ? <div style={{color:T.muted,padding:"20px 0",fontFamily:T.mono,fontSize:12}}>{t("dns.no_beacon")}</div>
+                  : snap.beacons.map((b,i)=>(
+                    <div key={i} style={{padding:"9px 12px",borderRadius:7,border:`1px solid ${T.red}33`,background:T.red+"08",marginBottom:6}}>
+                      <div style={{fontFamily:T.mono,fontSize:11,color:T.red,fontWeight:600}}>BEACONING</div>
+                      <div style={{fontSize:11,color:T.text,marginTop:4}}>{b.src} → {b.dst}:{b.port}</div>
+                      <div style={{fontSize:10,color:T.muted,marginTop:2}}>Ogni {b.interval_s}s</div>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ NMAP ═══ */}
+        {tab==="nmap"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 360px",gap:14}}>
+              <Card>
+                <CTitle>{t("nmap.launch")}</CTitle>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                  <div><div style={{fontSize:10,color:T.muted,marginBottom:5,letterSpacing:1,textTransform:"uppercase"}}>{t("nmap.target")}</div><input value={scanTarget} onChange={e=>setTarget(e.target.value)} placeholder="192.168.1.0/24"/></div>
+                  <div><div style={{fontSize:10,color:T.muted,marginBottom:5,letterSpacing:1,textTransform:"uppercase"}}>{t("nmap.ports")}</div><input value={scanPortsInput} onChange={e=>setSPI(e.target.value)} placeholder="1-1024"/></div>
+                </div>
+                {["Discovery","Port Scan","Evasion","Detection","Scripts","Timing"].map(cat=>(
+                  <div key={cat} style={{marginBottom:10}}>
+                    <div style={{fontSize:9,color:T.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:5}}>{cat}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {SCAN_TYPES.filter(s=>s.cat===cat).map(s=>(
+                        <div key={s.id} onClick={()=>setSelScan(s.id)}
+                          style={{padding:"5px 10px",border:`1px solid ${selScan===s.id?T.violet:T.border}`,borderRadius:6,cursor:"pointer",background:selScan===s.id?T.violet+"18":"transparent",transition:"all .12s"}}>
+                          <div style={{fontSize:11,fontWeight:700,fontFamily:T.mono,color:selScan===s.id?T.violet:T.text}}>{s.label}</div>
+                          <div style={{fontSize:9,color:T.muted}}>{s.desc}{s.root?" · root":""}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <Btn onClick={launchScan} disabled={scanning} style={{width:"100%",marginTop:4}}>{scanning?t("nmap.running"):t("nmap.start")}</Btn>
+                {scanning&&(
+                  <div style={{marginTop:10}}>
+                    <div style={{fontSize:11,fontFamily:T.mono,color:T.muted,marginBottom:6}}>{SCAN_TYPES.find(s=>s.id===selScan)?.label} su {scanTarget}…</div>
+                    <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${scanProg}%`,background:`linear-gradient(90deg,${T.cyan},${T.violet})`,borderRadius:2,transition:"width .4s"}}/>
+                    </div>
+                  </div>
+                )}
+              </Card>
+              <Card>
+                <CTitle>{t("nmap.scans")}</CTitle>
+                <div style={{maxHeight:500,overflowY:"auto"}}>
+                  {scans.length===0&&<div style={{color:T.muted,fontSize:12,fontFamily:T.mono,padding:"16px 0"}}>{t("nmap.none")}</div>}
+                  {scans.map((s,i)=>(
+                    <div key={i} onClick={()=>setSelScanId(s.id)}
+                      style={{padding:"10px 12px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:selScanId===s.id?T.s2:"transparent",borderRadius:6}}>
+                      <div style={{width:7,height:7,borderRadius:"50%",background:s.status==="running"?T.amber:T.green}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:T.mono,fontSize:11,color:T.text}}>{s.id} — <span style={{color:T.violet}}>{s.scan_type}</span></div>
+                        <div style={{fontSize:10,color:T.muted}}>{s.target} · {s.started_at?.slice(11,19)}</div>
+                      </div>
+                      <div style={{fontSize:10,fontFamily:T.mono,color:T.muted,textAlign:"right"}}>{s.host_count||0} hosts · {s.duration_s?.toFixed(1)}s</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+            {selScanId&&scanPorts.length>0&&(
+              <Card>
+                <CTitle right={`${scanPorts.length} ports found`}>{t("nmap.results")} — {scans.find(s=>s.id===selScanId)?.target}</CTitle>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead><tr>{["IP",t("nmap.port"),"Proto",t("nmap.state"),t("nmap.service"),t("nmap.version")].map(h=>(
+                      <th key={h} style={{color:T.muted,textAlign:"left",padding:"6px 8px",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,fontWeight:500}}>{h}</th>
+                    ))}</tr></thead>
+                    <tbody>
+                      {scanPorts.map((p,i)=>(
+                        <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                          <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.cyan}}>{p.ip}</td>
+                          <td style={{padding:"7px 8px",fontFamily:T.mono,fontSize:11,color:T.text}}>{p.port}</td>
+                          <td style={{padding:"7px 8px"}}><Badge color={PROTO_C[p.proto?.toUpperCase()]||T.muted}>{p.proto}</Badge></td>
+                          <td style={{padding:"7px 8px"}}><span style={{color:p.state==="open"?T.green:T.muted}}>● {p.state}</span></td>
+                          <td style={{padding:"7px 8px",color:T.violet,fontFamily:T.mono,fontSize:11}}>{p.service}</td>
+                          <td style={{padding:"7px 8px",color:T.muted,fontFamily:T.mono,fontSize:10}}>{p.version} {p.product}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* ═══ VULNERABILITÀ ═══ */}
+        {tab==="vulns"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn .3s ease"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+              <Stat label={t("vulns.total")}   value={vulns.length}                                  color={vulns.length>0?T.red:T.green}/>
+              <Stat label={t("vulns.high")}    value={vulns.filter(v=>v.severity==="high").length}   color={T.red}/>
+              <Stat label={t("vulns.medium")}  value={vulns.filter(v=>v.severity==="medium").length} color={T.amber}/>
+              <Stat label={t("vulns.hosts")}   value={new Set(vulns.map(v=>v.ip)).size}/>
+            </div>
+            <Card>
+              <CTitle>Lista Vulnerabilità (da scansioni Nmap reali)</CTitle>
+              <div style={{maxHeight:500,overflowY:"auto"}}>
+                {vulns.length===0
+                  ? <div style={{color:T.muted,padding:"24px",textAlign:"center",fontFamily:T.mono,fontSize:12}}>
+                      {t("vulns.empty")}<br/><span style={{color:T.violet}}>{t("vulns.tip")}</span>
+                    </div>
+                  : vulns.map((v,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderBottom:`1px solid ${T.border}`,animation:"fadeIn .2s ease"}}>
+                      <Badge color={SEV_C[v.severity]||T.muted}>{(v.severity||"?").toUpperCase()}</Badge>
+                      <span style={{fontFamily:T.mono,fontSize:11,color:T.cyan,minWidth:140}}>{v.ip}:{v.port}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:11,color:T.text,fontFamily:T.mono}}>{v.script_id}</div>
+                        <div style={{fontSize:10,color:T.muted,marginTop:2}}>{v.output?.slice(0,120)}</div>
+                      </div>
+                      {v.cve&&<span style={{fontFamily:T.mono,fontSize:10,color:T.red,border:`1px solid ${T.red}44`,borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap"}}>{v.cve}</span>}
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ CONFIG ═══ */}
+        {tab==="config"&&<ConfigPanel/>}
+
+      </div>
+    </div>
+  );
+}

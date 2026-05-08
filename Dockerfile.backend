@@ -1,0 +1,32 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System dependencies: libpcap, nmap, build tools for C++ capture binary
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpcap-dev \
+    libpcap0.8 \
+    nmap \
+    g++ \
+    make \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source
+COPY server.py db.py geoip.py nmap_scanner.py auth.py logger.py ./
+COPY capture/packet_capture.cpp capture/
+
+# Compile C++ capture binary
+RUN g++ -O2 -o capture/packet_capture capture/packet_capture.cpp -lpcap \
+    || echo "WARNING: pcap compile failed, demo mode will be used"
+
+# Data directory for persistent SQLite db
+RUN mkdir -p /data
+
+EXPOSE 5000
+
+CMD ["python", "server.py", "--port", "5000"]
