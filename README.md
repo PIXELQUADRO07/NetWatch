@@ -1,4 +1,3 @@
-[392.webm](https://github.com/user-attachments/assets/ad8c58a9-14f7-4de9-b47e-bac86172eb2b)
 # ⬡ NetWatch v4
 
 **Real-time network monitor and security tool** — cattura, analizza e visualizza il traffico di rete con rilevamento anomalie, scansioni Nmap integrate, geolocalizzazione e dashboard live.
@@ -22,6 +21,13 @@
 │ ⚙ Config     │  ✓ DNS_TUNNEL  10.0.0.15 DNS avg 512B    │
 └──────────────┴──────────────────────────────────────────┘
 ```
+
+
+
+
+
+
+
 
 ---
 
