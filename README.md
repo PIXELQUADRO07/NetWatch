@@ -1,109 +1,71 @@
 [392.webm](https://github.com/user-attachments/assets/0a7fcc6e-7330-4c1e-bf60-7e642ab8987c)
 # ⬡ NetWatch v4
 
-**Real-time network monitor and security tool** — cattura, analizza e visualizza il traffico di rete con rilevamento anomalie, scansioni Nmap integrate, geolocalizzazione e dashboard live.
+Real-time network monitor and security tool — Capture, analyze, and visualize network traffic with anomaly detection, integrated Nmap scans, geolocation, and live dashboards.
 
-```
 ┌─────────────────────────────────────────────────────────┐
 │  ⬡ NetWatch v4          LIVE ●          09:41:22        │
-│  BW 2.3 MB/s  PPS 1842  FLUSSI 47  ALERT 2  UP 00:12    │
+│  BW 2.3 MB/s  PPS 1842  FLOWS 47  ALERT 2  UP 00:12    │
 ├──────────────┬──────────────────────────────────────────┤
 │ Overview     │  Bandwidth (60s)           2.3 MB/s peak │
-│ 🌍 Mappa Geo │  ▁▂▄▆█▇▅▃▂▄▆▇█▅▃▁▂▄▆▇█   ~~~~~~~~~~~~~~  │
+│ 🌍 Geo Map   │  ▁▂▄▆█▇▅▃▂▄▆▇█▅▃▁▂▄▆▇█   ~~~~~~~~~~~~~~  │
 │ Network Graph│                                          │
-│ Flussi       │  Top Host per Banda                      │
+│ Flows        │  Top Host by Bandwidth                   │
 │ Host         │  192.168.1.10  ████████  1.1 MB/s        │
 │ Heatmap      │  192.168.1.20  ████      0.4 MB/s        │
 │ Alert (2)    │  10.0.0.5      ██        0.2 MB/s        │
 │ Analytics    │                                          │
-│ DNS          │  Protocolli:  TCP 72%  UDP 24%  ICMP 4%  │
+│ DNS          │  Protocols:  TCP 72%  UDP 24%  ICMP 4%  │
 │ Nmap         │                                          │
 │ Vulnerabilità│  ⚠ PORT_SCAN  192.168.1.50 → 24 port/10s │
 │ ⚙ Config     │  ✓ DNS_TUNNEL  10.0.0.15 DNS avg 512B    │
 └──────────────┴──────────────────────────────────────────┘
-```
-
-
-
-
-
-
-
-
----
-
-## ✨ Features
-
-| Categoria | Feature |
-|-----------|---------|
-| **Monitoraggio** | Bandwidth live · Flussi TCP/UDP/ICMP · Pacchetti/s · Top host real-time |
-| **Sicurezza** | Port scan detection · DNS tunneling · Bandwidth anomalie · Porte sospette · IP esterni che scansionano host interni |
-| **Visualizzazione** | Area chart live · Network graph animato · Mappa geo mondiale · Heatmap settimanale |
-| **Analytics** | Storico 24h/48h · Top IP · Top porte · Timeline alert · Trend banda |
-| **Scansione** | 19 tipi di scan Nmap · Vuln scan · Version detection · OS detection · Scheduling automatico |
-| **Sicurezza accesso** | JWT auth · bcrypt · Rate limiting · Auto-refresh token · Cambio password |
-| **Export** | CSV alert · CSV host · JSON snapshot · (PCAP via capture) |
-| **Config runtime** | Soglie alert · GeoIP on/off · Porte sospette · Retention DB · Rate limit |
-| **i18n** | Italiano 🇮🇹 · English 🇬🇧 (estendibile) |
-| **Deploy** | Docker Compose · Script bash · Venv Python |
-
----
-
-## 🚀 Quick Start
-
-### Con Docker (consigliato)
-
-```bash
+✨ Features
+Category	Feature
+Monitoring	Live bandwidth · TCP/UDP/ICMP flows · Packets/s · Top hosts real-time
+Security	Port scan detection · DNS tunneling · Bandwidth anomalies · Suspicious ports · External IPs scanning internal hosts
+Visualization	Live area chart · Animated network graph · World geo map · Weekly heatmap
+Analytics	24h/48h history · Top IPs · Top ports · Alert timeline · Bandwidth trends
+Scanning	19 Nmap scan types · Vuln scan · Version detection · OS detection · Auto scheduling
+Access Security	JWT auth · bcrypt · Rate limiting · Auto token refresh · Password change
+Export	CSV alerts · CSV hosts · JSON snapshot · (PCAP via capture)
+Runtime Config	Alert thresholds · GeoIP on/off · Suspicious ports · DB retention · Rate limit
+i18n	Italian 🇮🇹 · English 🇬🇧 (extensible)
+Deploy	Docker Compose · Bash script · Python Venv
+🚀 Quick Start
+With Docker (recommended)
 git clone https://github.com/youruser/netwatch.git
 cd netwatch
 
-# Copia e configura le variabili d'ambiente
+# Copy and configure environment variables
 cp .env.example .env
-# nano .env  ← cambia NETWATCH_SECRET_KEY e NETWATCH_ADMIN_PASS !
+# nano .env  ← change NETWATCH_SECRET_KEY and NETWATCH_ADMIN_PASS !
 
-# Avvia tutto con un comando
+# Start everything with one command
 docker compose up
-```
+Open http://localhost:8080 → Login: admin / netwatch
 
-Apri **http://localhost:8080** → Login: `admin` / `netwatch`
+Note: The backend container runs with network_mode: host and cap_add: NET_RAW to capture packets.
 
-> **Nota:** Il container backend gira con `network_mode: host` e `cap_add: NET_RAW` per poter catturare i pacchetti.
-
----
-
-### Senza Docker (sviluppo / demo)
-
-```bash
-# Demo mode — nessuna root, nessun pcap, dati sintetici
+Without Docker (development / demo)
+# Demo mode — no root, no pcap, synthetic data
 ./start.sh --demo
 
-# Oppure manuale
+# Or manual
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python server.py --demo --port 5000
 
-# Frontend (altro terminale)
+# Frontend (another terminal)
 cd dashboard && npm install && npm run dev
-```
+Open http://localhost:5173
 
-Apri **http://localhost:5173**
-
----
-
-### Con interfaccia reale (richiede root)
-
-```bash
+With real interface (requires root)
 sudo python server.py --interface eth0
 
-# o con auto-discovery dell'interfaccia
+# or with auto-discovery of interface
 sudo python server.py
-```
-
----
-
-## 🏗 Architettura
-
-```
+🏗 Architecture
 netwatch/
 ├── server.py            ← Flask API server (entry point)
 ├── db.py                ← SQLite persistence layer
@@ -124,189 +86,129 @@ netwatch/
 ├── Dockerfile.frontend
 ├── nginx.conf
 └── start.sh             ← Quick start script
-```
+Data flow
+Network → [C++ libpcap] → stdout JSON → [Python server.py]
+                                           ├── enrich() → GeoIP, anomalies
+                                           ├── db.py → SQLite
+                                           └── SSE broadcast → [React UI]
+Technology Stack
+Layer	Technologies
+Capture	C++17, libpcap
+Backend	Python 3.12, Flask 3, SQLite, bcrypt, PyJWT
+Frontend	React 18, Vite 5, Recharts, SVG Canvas
+Deploy	Docker, Nginx, Bash
+Security	JWT HS256, bcrypt, rate limiting, CORS
+🔐 Authentication
+NetWatch uses JWT with HMAC-SHA256 signature.
 
-### Flusso dati
-
-```
-Rete → [C++ libpcap] → stdout JSON → [Python server.py]
-                                          ├── enrich() → GeoIP, anomalie
-                                          ├── db.py → SQLite
-                                          └── SSE broadcast → [React UI]
-```
-
-### Stack tecnologico
-
-| Layer | Tecnologie |
-|-------|-----------|
-| **Capture** | C++17, libpcap |
-| **Backend** | Python 3.12, Flask 3, SQLite, bcrypt, PyJWT |
-| **Frontend** | React 18, Vite 5, Recharts, SVG Canvas |
-| **Deploy** | Docker, Nginx, Bash |
-| **Sicurezza** | JWT HS256, bcrypt, rate limiting, CORS |
-
----
-
-## 🔐 Autenticazione
-
-NetWatch usa JWT con firma HMAC-SHA256.
-
-```bash
 # Login
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"netwatch"}'
 
-# Usa il token
+# Use the token
 curl http://localhost:5000/api/snapshot \
   -H "Authorization: Bearer <token>"
-```
+Environment variables:
 
-**Variabili d'ambiente:**
-```bash
-NETWATCH_SECRET_KEY=cambia-questo-valore   # obbligatorio in produzione
+NETWATCH_SECRET_KEY=change-this-value   # mandatory in production
 NETWATCH_ADMIN_USER=admin
-NETWATCH_ADMIN_PASS=netwatch               # cambia dopo il primo login
-NETWATCH_JWT_EXPIRY=86400                  # secondi (default 24h)
-NETWATCH_AUTH_ENABLED=true                 # false per disabilitare (dev only)
-```
+NETWATCH_ADMIN_PASS=netwatch               # change after first login
+NETWATCH_JWT_EXPIRY=86400                  # seconds (default 24h)
+NETWATCH_AUTH_ENABLED=true                 # false to disable (dev only)
+📡 API Reference
+Main Endpoints
+Method	Path	Description
+GET	/api/status	Server status (no auth)
+POST	/api/auth/login	Login → JWT
+POST	/api/auth/refresh	Refresh token
+GET	/api/stream	SSE live stream
+GET	/api/snapshot	Latest snapshot
+GET	/api/history?limit=60	Snapshot history
+GET	/api/bandwidth/hourly?hours=24	Hourly bandwidth
+GET	/api/analytics/summary	Complete 24h analytics
+GET	/api/analytics/top-ips?hours=24	Top IPs by traffic
+GET	/api/analytics/top-ports	Top ports
+GET	/api/analytics/alert-timeline	Alert timeline
+GET	/api/alerts	Alert list
+POST	/api/alerts/ack_all	Mark all as read
+GET	/api/hosts	Known hosts
+GET	/api/scans	Nmap scans list
+POST	/api/scans	Start scan
+GET	/api/config	Current config
+PATCH	/api/config	Update config
+GET	/api/export/alerts.csv	Export CSV alerts
+GET	/api/export/hosts.csv	Export CSV hosts
+GET	/api/export/snapshots.json	Export JSON snapshots
+🔍 Anomaly Detection
+The server runs 6 real-time checks on every snapshot:
 
----
+Type	Condition	Severity
+HIGH_BANDWIDTH	Host exceeds configurable B/s threshold	medium
+FLOW_SPIKE	Active flows > configurable threshold	high
+PORT_SCAN	Same IP → 20+ different ports in 10s	high
+SUSPICIOUS_PORT	Traffic to known hacker ports	high
+DNS_TUNNEL	DNS query with average payload > 400B	medium
+EXT_SCAN	External IP → 5+ different internal hosts	high
+All thresholds are configurable from the Config panel without restart.
 
-## 📡 API Reference
+🌍 Internationalization
+The i18n system is ready to use with ~120 keys:
 
-### Endpoints principali
-
-| Metodo | Path | Descrizione |
-|--------|------|-------------|
-| `GET` | `/api/status` | Status server (no auth) |
-| `POST` | `/api/auth/login` | Login → JWT |
-| `POST` | `/api/auth/refresh` | Rinnova token |
-| `GET` | `/api/stream` | SSE live stream |
-| `GET` | `/api/snapshot` | Ultimo snapshot |
-| `GET` | `/api/history?limit=60` | Storico snapshot |
-| `GET` | `/api/bandwidth/hourly?hours=24` | Banda per ora |
-| `GET` | `/api/analytics/summary` | Analytics 24h complete |
-| `GET` | `/api/analytics/top-ips?hours=24` | Top IP per traffico |
-| `GET` | `/api/analytics/top-ports` | Top porte |
-| `GET` | `/api/analytics/alert-timeline` | Timeline alert |
-| `GET` | `/api/alerts` | Lista alert |
-| `POST` | `/api/alerts/ack_all` | Segna tutti letti |
-| `GET` | `/api/hosts` | Host noti |
-| `GET` | `/api/scans` | Lista scansioni Nmap |
-| `POST` | `/api/scans` | Avvia scansione |
-| `GET` | `/api/config` | Config corrente |
-| `PATCH` | `/api/config` | Aggiorna config |
-| `GET` | `/api/export/alerts.csv` | Export CSV alert |
-| `GET` | `/api/export/hosts.csv` | Export CSV host |
-| `GET` | `/api/export/snapshots.json` | Export JSON snapshot |
-
----
-
-## 🔍 Rilevamento anomalie
-
-Il server esegue 6 controlli in real-time su ogni snapshot:
-
-| Tipo | Condizione | Severità |
-|------|-----------|---------|
-| `HIGH_BANDWIDTH` | Host supera soglia B/s configurabile | medium |
-| `FLOW_SPIKE` | Flussi attivi > soglia configurabile | high |
-| `PORT_SCAN` | Stesso IP → 20+ porte diverse in 10s | high |
-| `SUSPICIOUS_PORT` | Traffico verso porte hacker note | high |
-| `DNS_TUNNEL` | Query DNS con payload medio > 400B | medium |
-| `EXT_SCAN` | IP esterno → 5+ host interni diversi | high |
-
-Tutte le soglie sono configurabili dal **pannello Config** senza riavvio.
-
----
-
-## 🌍 Internazionalizzazione
-
-Il sistema i18n è pronto all'uso con ~120 chiavi:
-
-```jsx
 import { useI18n } from './i18n.jsx'
 
 function MyComponent() {
   const { t, lang, changeLang } = useI18n()
   return <h1>{t("tab.overview")}</h1>
 }
-```
+To add a language, add a block in dashboard/src/i18n.jsx:
 
-Per aggiungere una lingua, aggiungi un blocco in `dashboard/src/i18n.jsx`:
-```js
 const translations = {
   it: { ... },
   en: { ... },
-  de: { ... },  // ← aggiungi qui
+  de: { ... },  // ← add here
 }
-```
+⚙️ Runtime Configuration
+From the Config panel in the UI (or via API PATCH /api/config):
 
----
-
-## ⚙️ Configurazione runtime
-
-Dal pannello **Config** nella UI (o via API `PATCH /api/config`):
-
-| Parametro | Default | Descrizione |
-|-----------|---------|-------------|
-| `alert_threshold_bps` | 5 MB/s | Soglia bandwidth per alert |
-| `alert_threshold_flows` | 300 | Soglia flussi attivi |
-| `alert_cooldown_sec` | 30 | Secondi tra alert dello stesso tipo |
-| `geoip_enabled` | true | Abilita risoluzione GeoIP |
-| `suspicious_ports` | `[6667,4444,1337,31337,9001]` | Porte da monitorare |
-| `prune_keep_days` | 7 | Giorni di retention nel DB |
-| `rate_limit_max` | 300 | Max richieste API per minuto per IP |
-| `language` | it | Lingua UI (it / en) |
-
----
-
-## 🗺 Roadmap
-
-- [ ] **WebSocket** al posto di SSE per comunicazione bidirezionale
-- [ ] **Threat Intelligence** — integrazione AbuseIPDB / VirusTotal
-- [ ] **Notifiche** — Telegram, Discord webhook, email
-- [ ] **Device discovery** — hostname, MAC vendor, OS guess automatico
-- [ ] **ML anomaly detection** — dopo accumulo storico serio
-- [ ] **Plugin system** — `/plugins/` directory per custom detector
-- [ ] **Multi-user** — account multipli con ruoli
-- [ ] **Cloud sync** — backup automatico del DB
-- [ ] **PCAP export** — cattura selettiva di flussi specifici
-- [ ] **Mobile responsive** — layout adattivo per smartphone
-
----
-
-## 🛠 Sviluppo
-
-```bash
-# Backend con hot-reload
+Parameter	Default	Description
+alert_threshold_bps	5 MB/s	Bandwidth alert threshold
+alert_threshold_flows	300	Active flows threshold
+alert_cooldown_sec	30	Seconds between same-type alerts
+geoip_enabled	true	Enable GeoIP resolution
+suspicious_ports	[6667,4444,1337,31337,9001]	Ports to monitor
+prune_keep_days	7	DB retention days
+rate_limit_max	300	Max API requests per minute per IP
+language	en	UI language (it / en)
+🗺 Roadmap
+ WebSocket instead of SSE for bidirectional communication
+ Threat Intelligence — AbuseIPDB / VirusTotal integration
+ Notifications — Telegram, Discord webhook, email
+ Device discovery — hostname, MAC vendor, OS auto-detection
+ ML anomaly detection — after serious history accumulation
+ Plugin system — /plugins/ directory for custom detectors
+ Multi-user — multiple accounts with roles
+ Cloud sync — automatic DB backup
+ PCAP export — selective capture of specific flows
+ Mobile responsive — adaptive layout for smartphones
+🛠 Development
+# Backend with hot-reload
 source venv/bin/activate
 FLASK_ENV=development python server.py --demo
 
-# Frontend con hot-reload
+# Frontend with hot-reload
 cd dashboard && npm run dev
 
-# Build frontend per produzione
+# Build frontend for production
 cd dashboard && npm run build
 
-# Rebuild immagini Docker
+# Rebuild Docker images
 docker compose build --no-cache
 docker compose up
-```
+Structured logs (JSON) in production:
 
-**Log strutturati (JSON) in produzione:**
-```bash
 NETWATCH_LOG_FORMAT=json python server.py 2>&1 | jq .
-```
+📄 License
+MIT License — see LICENSE for details.
 
----
-
-## 📄 Licenza
-
-MIT License — vedi `LICENSE` per dettagli.
-
----
-
-<div align="center">
-  <sub>Built with ⬡ by NetWatch contributors</sub>
-</div>
+Built with ⬡ by NetWatch contributors
