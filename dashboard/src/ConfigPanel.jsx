@@ -42,6 +42,12 @@ export default function ConfigPanel() {
   const [pruneDays,      setPrune]  = useState(7);
   const [rateLimit,      setRate]   = useState(300);
   const [darkMode,       setDark]   = useState(true);
+  // Beaconing
+  const [beaconMaxVar,   setBeaconVar]  = useState(4.0);
+  const [beaconMinConns, setBeaconConns]= useState(6);
+  // Baseline Z-score
+  const [baselineZ,      setBaselineZ]  = useState(3.0);
+  const [baselineMin,    setBaselineMin]= useState(30);
   const [pwCurrent,      setPwCur]  = useState("");
   const [pwNew,          setPwNew]  = useState("");
   const [pwMsg,          setPwMsg]  = useState("");
@@ -59,6 +65,10 @@ export default function ConfigPanel() {
         setPrune(d.prune_keep_days       ?? 7);
         setRate(d.rate_limit_max         ?? 300);
         setDark(d.dark_mode              ?? true);
+        setBeaconVar(d.beacon_max_variance   ?? 4.0);
+        setBeaconConns(d.beacon_min_conns    ?? 6);
+        setBaselineZ(d.baseline_z_thresh     ?? 3.0);
+        setBaselineMin(d.baseline_min_samples?? 30);
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -84,6 +94,10 @@ export default function ConfigPanel() {
           rate_limit_max:        Number(rateLimit),
           dark_mode:             darkMode,
           language:              lang,
+          beacon_max_variance:   Number(beaconMaxVar),
+          beacon_min_conns:      Number(beaconMinConns),
+          baseline_z_thresh:     Number(baselineZ),
+          baseline_min_samples:  Number(baselineMin),
         }),
       });
       if (!res.ok) throw new Error("Save failed");

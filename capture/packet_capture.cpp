@@ -15,11 +15,17 @@
 
 #include <pcap.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ether.h>
+#include <netinet/icmp6.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
+
+#ifndef ETHERTYPE_IPV6
+#define ETHERTYPE_IPV6 0x86DD
+#endif
 
 #include <iostream>
 #include <unordered_map>
@@ -85,10 +91,11 @@ static auto g_window_start = std::chrono::steady_clock::now();
 
 std::string proto_name(uint8_t p) {
     switch (p) {
-        case IPPROTO_TCP:  return "TCP";
-        case IPPROTO_UDP:  return "UDP";
-        case IPPROTO_ICMP: return "ICMP";
-        default:           return "OTHER";
+        case IPPROTO_TCP:   return "TCP";
+        case IPPROTO_UDP:   return "UDP";
+        case IPPROTO_ICMP:  return "ICMP";
+        case IPPROTO_ICMPV6:return "ICMPv6";
+        default:            return "OTHER";
     }
 }
 
@@ -228,30 +235,56 @@ void packet_handler(u_char* /*user*/, const struct pcap_pkthdr* header, const u_
     // Parse Ethernet
     if (header->caplen < sizeof(struct ether_header)) return;
     auto* eth = reinterpret_cast<const struct ether_header*>(packet);
-    if (ntohs(eth->ether_type) != ETHERTYPE_IP) return;
+    uint16_t ether_type = ntohs(eth->ether_type);
+    if (ether_type != ETHERTYPE_IP && ether_type != ETHERTYPE_IPV6) return;
 
-    // Parse IP
-    const u_char* ip_ptr = packet + sizeof(struct ether_header);
-    if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip)) return;
-    auto* iph = reinterpret_cast<const struct ip*>(ip_ptr);
+    const u_char* ip_ptr  = packet + sizeof(struct ether_header);
+    uint32_t pkt_len      = header->len;
+    uint8_t  proto        = 0;
+    uint16_t src_port     = 0, dst_port = 0;
+    std::string src_ip, dst_ip;
+    const u_char* transport = nullptr;
 
-    char src_buf[INET_ADDRSTRLEN], dst_buf[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &iph->ip_src, src_buf, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &iph->ip_dst, dst_buf, INET_ADDRSTRLEN);
-    std::string src_ip(src_buf), dst_ip(dst_buf);
+    if (ether_type == ETHERTYPE_IP) {
+        // ── IPv4 ──────────────────────────────────────────────────────────
+        if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip)) return;
+        auto* iph = reinterpret_cast<const struct ip*>(ip_ptr);
+        char src_buf[INET_ADDRSTRLEN], dst_buf[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &iph->ip_src, src_buf, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &iph->ip_dst, dst_buf, INET_ADDRSTRLEN);
+        src_ip = src_buf; dst_ip = dst_buf;
+        proto  = iph->ip_p;
+        int ip_hlen = iph->ip_hl * 4;
+        transport   = ip_ptr + ip_hlen;
+    } else {
+        // ── IPv6 ──────────────────────────────────────────────────────────
+        if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip6_hdr)) return;
+        auto* ip6h = reinterpret_cast<const struct ip6_hdr*>(ip_ptr);
+        char src_buf[INET6_ADDRSTRLEN], dst_buf[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &ip6h->ip6_src, src_buf, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &ip6h->ip6_dst, dst_buf, INET6_ADDRSTRLEN);
+        src_ip = src_buf; dst_ip = dst_buf;
+        proto  = ip6h->ip6_nxt;   // next-header (TCP=6, UDP=17, ICMPv6=58)
+        transport = ip_ptr + sizeof(struct ip6_hdr);
+        // Skip extension headers (hop-by-hop, routing, fragment…)
+        while (proto == 0 || proto == 43 || proto == 44 || proto == 60) {
+            if (!transport || transport >= packet + header->caplen - 2) break;
+            uint8_t next = transport[0];
+            uint8_t ext_len = (transport[1] + 1) * 8;
+            transport += ext_len;
+            proto = next;
+        }
+    }
 
-    uint32_t pkt_len = header->len;
-    uint8_t  proto   = iph->ip_p;
-    uint16_t src_port = 0, dst_port = 0;
+    if (!transport) return;
 
-    int ip_hlen = iph->ip_hl * 4;
-    const u_char* transport = ip_ptr + ip_hlen;
-
-    if (proto == IPPROTO_TCP && header->caplen >= sizeof(struct ether_header) + ip_hlen + sizeof(struct tcphdr)) {
+    if (proto == IPPROTO_TCP &&
+        header->caplen >= (size_t)(transport - packet) + sizeof(struct tcphdr)) {
         auto* tcph = reinterpret_cast<const struct tcphdr*>(transport);
         src_port = ntohs(tcph->th_sport);
         dst_port = ntohs(tcph->th_dport);
-    } else if (proto == IPPROTO_UDP && header->caplen >= sizeof(struct ether_header) + ip_hlen + sizeof(struct udphdr)) {
+    } else if (proto == IPPROTO_UDP &&
+               header->caplen >= (size_t)(transport - packet) + sizeof(struct udphdr)) {
         auto* udph = reinterpret_cast<const struct udphdr*>(transport);
         src_port = ntohs(udph->uh_sport);
         dst_port = ntohs(udph->uh_dport);

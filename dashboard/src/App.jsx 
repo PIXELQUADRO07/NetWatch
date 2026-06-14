@@ -758,8 +758,78 @@ export default function App() {
         )}
 
         {/* ═══ HOST ═══ */}
-        {tab==="hosts"&&(
+        {tab==="hosts"&&(()=>{
+          const [selHost,setSelHost] = useState(null);
+          const [editTags,setEditTags] = useState("");
+          const [editNotes,setEditNotes] = useState("");
+          const [editHostname,setEditHostname] = useState("");
+          const [saving,setSaving] = useState(false);
+
+          const openModal = h => {
+            setSelHost(h);
+            setEditTags((h.tags&&Array.isArray(h.tags)?h.tags:JSON.parse(h.tags||"[]")).join(", "));
+            setEditNotes(h.notes||"");
+            setEditHostname(h.hostname||"");
+          };
+          const closeModal = () => setSelHost(null);
+          const saveHost = async () => {
+            if(!selHost) return;
+            setSaving(true);
+            const tags = editTags.split(",").map(s=>s.trim()).filter(Boolean);
+            await authedFetch(`${API}/hosts/${encodeURIComponent(selHost.ip)}`,{
+              method:"PATCH",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({hostname:editHostname,tags,notes:editNotes})
+            });
+            setHosts(p=>p.map(h=>h.ip===selHost.ip?{...h,hostname:editHostname,tags,notes:editNotes}:h));
+            setSaving(false);
+            closeModal();
+          };
+
+          return (
           <div style={{display:"flex",flexDirection:"column",gap:10,animation:"fadeIn .3s ease"}}>
+            {/* ── Host detail modal ── */}
+            {selHost&&(
+              <div onClick={closeModal} style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div onClick={e=>e.stopPropagation()} style={{background:T.s1,border:`1px solid ${T.border2}`,borderRadius:14,padding:24,width:460,display:"flex",flexDirection:"column",gap:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontFamily:T.mono,fontSize:13,color:T.cyan,fontWeight:700}}>{selHost.ip}</span>
+                    <Badge color={/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(selHost.ip)?T.green:T.pink}>
+                      {/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(selHost.ip)?"INTERNAL":"EXTERNAL"}
+                    </Badge>
+                  </div>
+                  <div style={{fontSize:11,color:T.muted,fontFamily:T.mono}}>
+                    {selHost.mac&&<div>MAC: {selHost.mac} {selHost.vendor&&`(${selHost.vendor})`}</div>}
+                    {selHost.os_guess&&<div>OS: {selHost.os_guess}</div>}
+                    {selHost.last_seen&&<div>Last seen: {selHost.last_seen?.slice(0,19)}</div>}
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",display:"block",marginBottom:5}}>Hostname</label>
+                    <input value={editHostname} onChange={e=>setEditHostname(e.target.value)} style={{width:"100%"}} placeholder="router, nas, printer…"/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",display:"block",marginBottom:5}}>Tags (comma separated)</label>
+                    <input value={editTags} onChange={e=>setEditTags(e.target.value)} style={{width:"100%"}} placeholder="trusted, printer, iot, server…"/>
+                    <div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>
+                      {editTags.split(",").map(s=>s.trim()).filter(Boolean).map((tag,i)=>(
+                        <Badge key={i} color={T.violet} style={{fontSize:10}}>{tag}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",display:"block",marginBottom:5}}>Notes</label>
+                    <textarea value={editNotes} onChange={e=>setEditNotes(e.target.value)}
+                      style={{width:"100%",height:80,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",
+                              color:T.text,fontFamily:T.mono,fontSize:12,outline:"none",resize:"vertical"}}
+                      placeholder="Free notes about this host…"/>
+                  </div>
+                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                    <Btn onClick={closeModal} color={T.muted}>Cancel</Btn>
+                    <Btn onClick={saveHost} color={T.cyan} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
+                  </div>
+                </div>
+              </div>
+            )}
             <div style={{display:"flex",gap:8}}>
               <input value={hostFilter} onChange={e=>setHF(e.target.value)} placeholder={t("hosts.filter")} style={{maxWidth:300}}/>
               <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.muted}}>{realHosts.length} {t("hosts.count")}</span>
@@ -767,28 +837,39 @@ export default function App() {
             </div>
             <Card>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr>{[t("hosts.ip"),t("hosts.hostname"),t("hosts.os"),t("hosts.mac"),t("hosts.type"),t("hosts.sent"),t("hosts.recv"),t("hosts.last_seen")].map(h=>(
+                <thead><tr>{[t("hosts.ip"),t("hosts.hostname"),t("hosts.os"),t("hosts.mac"),t("hosts.type"),"Tags",t("hosts.sent"),t("hosts.recv"),t("hosts.last_seen"),""].map(h=>(
                   <th key={h} style={{color:T.muted,textAlign:"left",padding:"6px 8px",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,fontWeight:500}}>{h}</th>
                 ))}</tr></thead>
                 <tbody>
-                  {realHosts.length===0&&<tr><td colSpan={8} style={{padding:"24px",color:T.muted,textAlign:"center",fontFamily:T.mono,fontSize:12}}>{t("hosts.empty")}</td></tr>}
-                  {realHosts.map((h,i)=>{ const isInt=/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h.ip); const live=h.live||{}; return (
-                    <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                  {realHosts.length===0&&<tr><td colSpan={9} style={{padding:"24px",color:T.muted,textAlign:"center",fontFamily:T.mono,fontSize:12}}>{t("hosts.empty")}</td></tr>}
+                  {realHosts.map((h,i)=>{ const isInt=/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h.ip); const live=h.live||{};
+                    const tags=Array.isArray(h.tags)?h.tags:(typeof h.tags==="string"?JSON.parse(h.tags||"[]"):[]);
+                    return (
+                    <tr key={i} style={{borderBottom:`1px solid ${T.border}22`,cursor:"pointer",transition:"background .1s"}}
+                        onMouseEnter={e=>e.currentTarget.style.background=T.s2+"88"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.cyan}}>{h.ip}</td>
                       <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.text}}>{h.hostname||"—"}</td>
                       <td style={{padding:"8px",fontSize:11,color:T.muted}}>{h.os_guess||"—"}</td>
                       <td style={{padding:"8px",fontFamily:T.mono,fontSize:10,color:T.muted}}>{h.vendor||h.mac||"—"}</td>
                       <td style={{padding:"8px"}}><Badge color={isInt?T.green:T.pink}>{isInt?t("hosts.internal"):t("hosts.external")}</Badge></td>
+                      <td style={{padding:"8px"}}>
+                        <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                          {tags.map((tag,ti)=><Badge key={ti} color={T.violet} style={{fontSize:9,padding:"1px 5px"}}>{tag}</Badge>)}
+                        </div>
+                      </td>
                       <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.green}}>{fmtB(live.bytes_sent)}</td>
                       <td style={{padding:"8px",fontFamily:T.mono,fontSize:11,color:T.violet}}>{fmtB(live.bytes_recv)}</td>
                       <td style={{padding:"8px",fontSize:10,color:T.muted}}>{h.last_seen?.slice(11,19)||"—"}</td>
+                      <td style={{padding:"8px"}}><Btn onClick={()=>openModal(h)} color={T.muted} style={{fontSize:9,padding:"2px 8px"}}>Edit</Btn></td>
                     </tr>
                   );})}
                 </tbody>
               </table>
             </Card>
           </div>
-        )}
+          );
+        })()}
 
         {/* ═══ HEATMAP ═══ */}
         {tab==="heatmap"&&(
@@ -821,7 +902,7 @@ export default function App() {
         {tab==="alerts"&&(
           <div style={{display:"flex",flexDirection:"column",gap:10,animation:"fadeIn .3s ease"}}>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <select value={alertFilter} onChange={e=>setAF(e.target.value)} style={{width:180}}>
+              <select value={alertFilter} onChange={e=>setAF(e.target.value)} style={{width:190}}>
                 <option value="">{t("alerts.all")}</option>
                 <option value="high">{t("alerts.high")}</option>
                 <option value="medium">{t("alerts.medium")}</option>
@@ -831,6 +912,7 @@ export default function App() {
                 <option value="SUSPICIOUS_PORT">SUSPICIOUS_PORT</option>
                 <option value="EXT_SCAN">EXT_SCAN</option>
                 <option value="FLOW_SPIKE">FLOW_SPIKE</option>
+                <option value="BEACONING">BEACONING</option>
               </select>
               <Btn onClick={()=>setAlerts(p=>p.map(a=>({...a,acked:true})))} color={T.muted}>{t("alerts.mark_all")}</Btn>
               <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.muted}}>{filtAlerts.length} {t("alerts.count")} · {unacked} {t("alerts.unread")}</span>
@@ -852,8 +934,11 @@ export default function App() {
                 </div>}
                 {filtAlerts.map((a,i)=>{ const sev=a.sev||a.severity||"low"; return (
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:7,border:`1px solid ${SEV_C[sev]||T.border}33`,background:(SEV_C[sev]||T.muted)+"08",marginBottom:6,opacity:a.acked?.4:1,animation:"fadeIn .2s ease"}}>
-                    <div style={{width:6,height:6,borderRadius:"50%",background:SEV_C[sev]||T.muted,flexShrink:0}}/><Badge color={SEV_C[sev]||T.muted}>{sev.toUpperCase()}</Badge>
-                    <span style={{fontFamily:T.mono,fontSize:11,fontWeight:600,color:T.text,minWidth:160}}>{a.type}</span>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:SEV_C[sev]||T.muted,flexShrink:0}}/>
+                    <Badge color={SEV_C[sev]||T.muted}>{sev.toUpperCase()}</Badge>
+                    <span style={{fontFamily:T.mono,fontSize:11,fontWeight:600,color:a.type==="BEACONING"?T.red:T.text,minWidth:150}}>{a.type}</span>
+                    {a.occurrences>1&&<Badge color={T.amber} style={{fontSize:9,padding:"1px 6px"}}>×{a.occurrences}</Badge>}
+                    {a.zscore&&<Badge color={T.violet} style={{fontSize:9,padding:"1px 6px"}}>{a.zscore}σ</Badge>}
                     <span style={{color:T.muted,fontSize:11,flex:1}}>{a.detail}</span>
                     <span style={{color:T.muted,fontSize:10,marginRight:8}}>{a.ts}</span>
                     {!a.acked&&<Btn onClick={()=>setAlerts(p=>p.map((x,j)=>j===i?{...x,acked:true}:x))} color={T.muted} style={{padding:"2px 8px",fontSize:10}}>{t("alerts.ack")}</Btn>}
@@ -890,10 +975,21 @@ export default function App() {
                 {!(snap?.beacons?.length)
                   ? <div style={{color:T.muted,padding:"20px 0",fontFamily:T.mono,fontSize:12}}>{t("dns.no_beacon")}</div>
                   : snap.beacons.map((b,i)=>(
-                    <div key={i} style={{padding:"9px 12px",borderRadius:7,border:`1px solid ${T.red}33`,background:T.red+"08",marginBottom:6}}>
-                      <div style={{fontFamily:T.mono,fontSize:11,color:T.red,fontWeight:600}}>BEACONING</div>
-                      <div style={{fontSize:11,color:T.text,marginTop:4}}>{b.src} → {b.dst}:{b.port}</div>
-                      <div style={{fontSize:10,color:T.muted,marginTop:2}}>Ogni {b.interval_s}s</div>
+                    <div key={i} style={{padding:"10px 14px",borderRadius:7,border:`1px solid ${T.red}44`,background:T.red+"0a",marginBottom:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                        <Badge color={T.red}>BEACONING</Badge>
+                        <span style={{fontFamily:T.mono,fontSize:10,color:T.muted}}>{b.conns} conn / 5m</span>
+                      </div>
+                      <div style={{fontFamily:T.mono,fontSize:11,color:T.text}}>
+                        <span style={{color:T.cyan}}>{b.src}</span>
+                        <span style={{color:T.muted}}> → </span>
+                        <span style={{color:T.violet}}>{b.dst}</span>
+                        <span style={{color:T.muted}}>:{b.port}</span>
+                      </div>
+                      <div style={{fontSize:10,color:T.amber,marginTop:4,fontFamily:T.mono}}>
+                        ⏱ ogni ~{b.interval_s}s
+                      </div>
+                      <div style={{fontSize:10,color:T.muted,marginTop:3}}>{b.detail}</div>
                     </div>
                   ))}
               </div>
